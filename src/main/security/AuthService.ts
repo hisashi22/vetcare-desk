@@ -93,20 +93,29 @@ export class AuthService {
    * Só funciona quando ainda não existem usuários.
    */
   public registerInitialAdmin(
-    nome: string,
-    email: string,
-    password: string
-  ): AuthenticatedUser {
-    const users = this.database.query<{ total: number }>(
-      'SELECT COUNT(*) AS total FROM usuarios'
-    );
+  nome: string,
+  email: string,
+  password: string
+): AuthenticatedUser {
+  const users = this.database.query<{ total: number }>(
+    'SELECT COUNT(*) AS total FROM usuarios'
+  );
 
-    if (users[0].total !== 0) {
-      throw new Error('O administrador inicial já foi criado.');
-    }
-
-    return this.createAccount(nome, email, password, 'ADMIN');
+  if (users[0].total !== 0) {
+    throw new Error('O administrador inicial já foi criado.');
   }
+
+  const admin = this.createAccount(
+    nome,
+    email,
+    password,
+    'ADMIN'
+  );
+
+  this.currentUser = { ...admin };
+
+  return { ...this.currentUser };
+}
 
   /**
    * Cadastra novos usuários.

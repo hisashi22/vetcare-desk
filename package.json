@@ -9,8 +9,11 @@
     "build:renderer": "tsc -p tsconfig.renderer.json",
     "build": "npm run build:main && npm run build:renderer",
     "start": "npm run build && electron .",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.renderer.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.renderer.json",
+    "test": "npm run build:main && node --test dist/main/security/SecurityValidator.test.js"
   },
+
+  
   "dependencies": {
     "dotenv": "^16.4.7",
     "sql.js": "^1.13.0"

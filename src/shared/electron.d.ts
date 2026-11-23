@@ -10,6 +10,11 @@ import type {
   Pet
 } from './types';
 
+import type {
+  VacinaPendente,
+  ResultadoNotificacoes
+} from './notification-types';
+
 interface LoginData {
   email: string;
   password: string;
@@ -55,6 +60,9 @@ interface VetCareAPI {
     createPet(data: PetData): Promise<number>;
     updatePet(id: number, data: PetData): Promise<boolean>;
     deletePet(id: number): Promise<boolean>;
+  notificacoes: {
+    buscarVacinasPendentes(): Promise<VacinaPendente[]>;
+    enviarNotificacoes(): Promise<ResultadoNotificacoes>;
   };
 }
 

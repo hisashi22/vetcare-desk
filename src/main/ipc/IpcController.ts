@@ -1,5 +1,7 @@
 
 import { SecurityValidator } from '../security/SecurityValidator';
+import { SecurityValidator } from '../security/SecurityValidator';
+import { NotificacaoVacinaService } from '../services/NotificacaoVacinaService';
 import { AuthService, Permission } from '../security/AuthService';
 import { ClinicaService } from '../services/ClinicaService';
 
@@ -55,6 +57,20 @@ export class IpcController {
     this.ipcMain = ipcMain;
     this.clinicaService = clinicaService;
   }
+  private readonly notificacaoVacinaService: NotificacaoVacinaService;
+
+  constructor(
+  authService: AuthService,
+  getMainWindow: () => BrowserWindow | null,
+  ipcMain: IpcMain,
+  notificacaoVacinaService: NotificacaoVacinaService =
+    new NotificacaoVacinaService()
+) {
+  this.authService = authService;
+  this.getMainWindow = getMainWindow;
+  this.ipcMain = ipcMain;
+  this.notificacaoVacinaService = notificacaoVacinaService;
+}
 
   private validateSender(event: IpcMainInvokeEvent): void {
     const mainWindow = this.getMainWindow();
@@ -68,6 +84,19 @@ export class IpcController {
       throw new Error('Origem da chamada IPC não autorizada.');
     }
   }
+
+  private validateClinicalAccess(): void {
+  const usuario = this.authService.getCurrentUser();
+
+  if (
+    !usuario ||
+    !this.authService.hasPermission('MANAGE_CLINICAL')
+  ) {
+    throw new Error(
+      'Acesso não autorizado às notificações de vacinação.'
+    );
+  }
+}
 
   private validateLoginData(data: unknown): void {
     if (!data || typeof data !== 'object' || Array.isArray(data)) {
@@ -402,6 +431,12 @@ export class IpcController {
         return this.clinicaService.listarPetsDoTutor(
           this.validateId(tutorId)
         );
+      'notificacoes:buscar-vacinas-pendentes',
+      (event: IpcMainInvokeEvent) => {
+        this.validateSender(event);
+        this.validateClinicalAccess();
+
+        return this.notificacaoVacinaService.buscarVacinasPendentes();
       }
     );
 
@@ -432,6 +467,12 @@ export class IpcController {
       (event: IpcMainInvokeEvent, id: unknown) => {
         this.authorizeClinical(event);
         return this.clinicaService.excluirPet(this.validateId(id));
+      'notificacoes:enviar',
+      async (event: IpcMainInvokeEvent) => {
+        this.validateSender(event);
+        this.validateClinicalAccess();
+
+        return this.notificacaoVacinaService.enviarNotificacoes();
       }
     );
 
@@ -440,6 +481,18 @@ export class IpcController {
 
   public removeHandlers(): void {
     for (const channel of this.channels) {
+    const channels = [
+      'auth:register-initial-admin',
+      'auth:login',
+      'auth:logout',
+      'auth:get-current-user',
+      'auth:has-permission',
+      'auth:create-user',
+      'notificacoes:buscar-vacinas-pendentes',
+      'notificacoes:enviar'
+    ];
+
+    for (const channel of channels) {
       this.ipcMain.removeHandler(channel);
     }
 

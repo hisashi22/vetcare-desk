@@ -11,16 +11,12 @@ import type {
   Pet
 } from '../shared/types';
 
-type LoginData = {
-
-import type { UserRole } from '../shared/types';
-
 import type {
   VacinaPendente,
   ResultadoNotificacoes
 } from '../shared/notification-types';
 
-interface LoginData {
+type LoginData = {
   email: string;
   password: string;
 };
@@ -65,8 +61,6 @@ const vetcareAPI = {
   },
 
   clinical: {
-    // TUTORES
-
     listTutors: (): Promise<Tutor[]> =>
       ipcRenderer.invoke('clinical:list-tutors'),
 
@@ -85,7 +79,8 @@ const vetcareAPI = {
     deleteTutor: (id: number): Promise<boolean> =>
       ipcRenderer.invoke('clinical:delete-tutor', id),
 
-    // PETS
+    buscarCep: (cep: string) =>
+      ipcRenderer.invoke('clinical:buscar-cep', cep),
 
     listPets: (): Promise<Pet[]> =>
       ipcRenderer.invoke('clinical:list-pets'),
@@ -104,6 +99,8 @@ const vetcareAPI = {
 
     deletePet: (id: number): Promise<boolean> =>
       ipcRenderer.invoke('clinical:delete-pet', id)
+  },
+
   notificacoes: {
     buscarVacinasPendentes: (): Promise<VacinaPendente[]> =>
       ipcRenderer.invoke('notificacoes:buscar-vacinas-pendentes'),

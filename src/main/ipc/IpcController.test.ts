@@ -1,4 +1,3 @@
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -31,16 +30,19 @@ const EXPECTED_CHANNELS = [
   'clinical:create-tutor',
   'clinical:update-tutor',
   'clinical:delete-tutor',
+  'clinical:buscar-cep',
 
   'clinical:list-pets',
   'clinical:get-pet',
   'clinical:list-pets-by-tutor',
   'clinical:create-pet',
   'clinical:update-pet',
-  'clinical:delete-pet'
+  'clinical:delete-pet',
+
+  'notificacoes:buscar-vacinas-pendentes',
+  'notificacoes:enviar'
 ];
 
-function createTestEnvironment() {
 function createTestEnvironment(
   autenticado = true,
   permissaoClinica = true
@@ -112,6 +114,7 @@ function createTestEnvironment(
     atualizarPet: () => null,
     excluirPet: () => true
   } as unknown as ClinicaService;
+
   const notificacaoVacinaService = {
     buscarVacinasPendentes: () => [],
     enviarNotificacoes: async () => ({
@@ -122,12 +125,23 @@ function createTestEnvironment(
     })
   };
 
+  const cepService = {
+    buscarEnderecoPorCep: async () => ({
+      cep: '01001-000',
+      logradouro: 'Praça da Sé',
+      bairro: 'Sé',
+      cidade: 'São Paulo',
+      uf: 'SP'
+    })
+  };
+
   const controller = new IpcController(
     authService,
     () => mainWindow,
     fakeIpcMain,
-    clinicaService
-    notificacaoVacinaService as never
+    clinicaService,
+    notificacaoVacinaService as never,
+    cepService as never
   );
 
   controller.registerHandlers();
@@ -139,7 +153,7 @@ function createTestEnvironment(
   };
 }
 
-test('deve registrar os dezoito canais IPC', () => {
+test('deve registrar os vinte e um canais IPC', () => {
   const { handlers } = createTestEnvironment();
 
   assert.equal(handlers.size, EXPECTED_CHANNELS.length);
@@ -151,10 +165,6 @@ test('deve registrar os dezoito canais IPC', () => {
       `O canal ${channel} deveria estar registrado.`
     );
   }
-test('deve registrar os oito canais IPC', () => {
-  const { handlers } = createTestEnvironment();
-
-  assert.equal(handlers.size, 8);
 });
 
 test('deve rejeitar chamadas de origem não autorizada', () => {
@@ -223,14 +233,10 @@ test('deve impedir registro duplicado dos canais', () => {
   );
 });
 
-test('deve remover os dezoito canais IPC', () => {
+test('deve remover os vinte e um canais IPC', () => {
   const { controller, handlers } = createTestEnvironment();
 
   assert.equal(handlers.size, EXPECTED_CHANNELS.length);
-test('deve remover os oito canais IPC', () => {
-  const { controller, handlers } = createTestEnvironment();
-
-  assert.equal(handlers.size, 8);
 
   controller.removeHandlers();
 

@@ -78,6 +78,10 @@ test('deve cadastrar o administrador inicial', async () => {
 
     assert.equal(admin.role, 'ADMIN');
     assert.equal(admin.email, 'admin@email.com');
+
+    // Verifica se o cadastro também iniciou a sessão.
+    assert.equal(auth.getCurrentUser()?.id, admin.id);
+    assert.equal(auth.hasPermission('MANAGE_CLINICAL'), true);
   } finally {
     db.close();
   }
@@ -191,6 +195,17 @@ test('VETERINARIO deve acessar somente recursos clínicos', async () => {
     assert.equal(auth.hasPermission('MANAGE_CLINICAL'), true);
     assert.equal(auth.hasPermission('MANAGE_USERS'), false);
     assert.equal(auth.hasPermission('DELETE_CRITICAL'), false);
+
+    // Verifica se o veterinário é impedido de cadastrar usuários.
+    assert.throws(
+      () => auth.createUser(
+        'Outro Usuário',
+        'outro@email.com',
+        'SenhaSegura123',
+        'VETERINARIO'
+      ),
+      /Acesso negado. Apenas ADMIN pode cadastrar usuários/
+    );
   } finally {
     db.close();
   }

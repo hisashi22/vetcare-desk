@@ -13,21 +13,9 @@ interface UserRow {
   perfil: UserRole;
 }
 
-export interface AuthenticatedUser {
-  id: number;
-  nome: string;
-  email: string;
-  role: UserRole;
-}
+import { AuthenticatedUser, Permission } from '../../shared/auth-types';
 
-export type Permission =
-  | 'MANAGE_USERS'
-  | 'MANAGE_SUPPLIERS'
-  | 'MANAGE_STOCK'
-  | 'MANAGE_FINANCES'
-  | 'MANAGE_CLINICAL'
-  | 'DELETE_CRITICAL';
-
+export { AuthenticatedUser, Permission };
 
   interface AuthDatabase {
   query<T = Record<string, unknown>>(

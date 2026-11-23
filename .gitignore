@@ -21,3 +21,5 @@ EOF
 
 vetcare.db
 src/main/database/testDatabase.ts
+
+src/main/repositories/BaseRepository.test.ts

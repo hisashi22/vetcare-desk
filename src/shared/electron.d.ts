@@ -1,4 +1,3 @@
-
 import type {
   AuthenticatedUser,
   Permission
@@ -36,6 +35,14 @@ interface RegisterAdminData {
 type TutorData = Omit<Tutor, 'id'>;
 type PetData = Omit<Pet, 'id'>;
 
+interface EnderecoViaCep {
+  cep: string;
+  logradouro: string;
+  bairro: string;
+  cidade: string;
+  uf: string;
+}
+
 interface VetCareAPI {
   auth: {
     login(data: LoginData): Promise<AuthenticatedUser>;
@@ -53,6 +60,7 @@ interface VetCareAPI {
     createTutor(data: TutorData): Promise<number>;
     updateTutor(id: number, data: TutorData): Promise<boolean>;
     deleteTutor(id: number): Promise<boolean>;
+    buscarCep(cep: string): Promise<EnderecoViaCep>;
 
     listPets(): Promise<Pet[]>;
     getPet(id: number): Promise<Pet | null>;
@@ -60,6 +68,8 @@ interface VetCareAPI {
     createPet(data: PetData): Promise<number>;
     updatePet(id: number, data: PetData): Promise<boolean>;
     deletePet(id: number): Promise<boolean>;
+  };
+
   notificacoes: {
     buscarVacinasPendentes(): Promise<VacinaPendente[]>;
     enviarNotificacoes(): Promise<ResultadoNotificacoes>;

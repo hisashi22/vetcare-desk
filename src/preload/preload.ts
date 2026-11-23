@@ -1,4 +1,3 @@
-
 import { contextBridge, ipcRenderer } from 'electron';
 
 import type {
@@ -13,6 +12,15 @@ import type {
 } from '../shared/types';
 
 type LoginData = {
+
+import type { UserRole } from '../shared/types';
+
+import type {
+  VacinaPendente,
+  ResultadoNotificacoes
+} from '../shared/notification-types';
+
+interface LoginData {
   email: string;
   password: string;
 };
@@ -96,6 +104,12 @@ const vetcareAPI = {
 
     deletePet: (id: number): Promise<boolean> =>
       ipcRenderer.invoke('clinical:delete-pet', id)
+  notificacoes: {
+    buscarVacinasPendentes: (): Promise<VacinaPendente[]> =>
+      ipcRenderer.invoke('notificacoes:buscar-vacinas-pendentes'),
+
+    enviarNotificacoes: (): Promise<ResultadoNotificacoes> =>
+      ipcRenderer.invoke('notificacoes:enviar')
   }
 };
 

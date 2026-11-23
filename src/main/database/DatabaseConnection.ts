@@ -225,6 +225,24 @@ public getLastInsertId(): number {
           ON DELETE RESTRICT
       );
 
+      CREATE TABLE IF NOT EXISTS notificacoes_vacina (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        prescricao_id INTEGER NOT NULL,
+        proxima_dose TEXT NOT NULL,
+        email_destino TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'PENDENTE'
+          CHECK (status IN ('PENDENTE', 'ENVIADO', 'FALHA')),
+        enviado_em TEXT,
+        criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (prescricao_id, proxima_dose, email_destino),
+        FOREIGN KEY (prescricao_id)
+          REFERENCES prescricoes_aplicacoes(id)
+          ON DELETE RESTRICT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_notificacoes_status
+        ON notificacoes_vacina(status);
+
       CREATE INDEX IF NOT EXISTS idx_pets_tutor
         ON pets(tutor_id);
 

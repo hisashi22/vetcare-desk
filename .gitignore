@@ -1,4 +1,3 @@
-cat > .gitignore <<'EOF'
 # Dependências
 node_modules/
 
@@ -10,6 +9,13 @@ dist/
 .env.*
 !.env.example
 
+# Banco de dados local
+vetcare.db
+
+# Arquivos de teste locais
+src/main/database/testDatabase.ts
+src/main/repositories/BaseRepository.test.ts
+
 # Arquivos do sistema
 .DS_Store
 Thumbs.db
@@ -17,9 +23,3 @@ Thumbs.db
 # Logs
 npm-debug.log*
 yarn-debug.log*
-EOF
-
-vetcare.db
-src/main/database/testDatabase.ts
-
-src/main/repositories/BaseRepository.test.ts

@@ -1,3 +1,4 @@
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -14,7 +15,10 @@ type Handler = (
   ...args: unknown[]
 ) => unknown;
 
-function createTestEnvironment() {
+function createTestEnvironment(
+  autenticado = true,
+  permissaoClinica = true
+) {
   const handlers = new Map<string, Handler>();
 
   const fakeIpcMain = {
@@ -43,16 +47,41 @@ function createTestEnvironment() {
   const authService = {
     login: async () => null,
     logout: () => undefined,
-    getCurrentUser: () => null,
-    hasPermission: () => true,
+
+    getCurrentUser: () =>
+      autenticado
+        ? {
+            id: 1,
+            nome: 'Administrador',
+            email: 'admin@email.com',
+            role: 'ADMIN'
+          }
+        : null,
+
+    hasPermission: (permission: string) =>
+      permission === 'MANAGE_CLINICAL'
+        ? permissaoClinica
+        : true,
+
     createUser: async () => null,
     registerInitialAdmin: async () => null
   } as unknown as AuthService;
 
+  const notificacaoVacinaService = {
+    buscarVacinasPendentes: () => [],
+    enviarNotificacoes: async () => ({
+      total: 0,
+      enviados: 0,
+      falhas: 0,
+      ignorados: 0
+    })
+  };
+
   const controller = new IpcController(
     authService,
     () => mainWindow,
-    fakeIpcMain
+    fakeIpcMain,
+    notificacaoVacinaService as never
   );
 
   controller.registerHandlers();
@@ -64,10 +93,10 @@ function createTestEnvironment() {
   };
 }
 
-test('deve registrar os seis canais IPC', () => {
+test('deve registrar os oito canais IPC', () => {
   const { handlers } = createTestEnvironment();
 
-  assert.equal(handlers.size, 6);
+  assert.equal(handlers.size, 8);
 });
 
 test('deve rejeitar chamadas de origem não autorizada', () => {
@@ -136,12 +165,47 @@ test('deve impedir registro duplicado dos canais', () => {
   );
 });
 
-test('deve remover os seis canais IPC', () => {
+test('deve remover os oito canais IPC', () => {
   const { controller, handlers } = createTestEnvironment();
 
-  assert.equal(handlers.size, 6);
+  assert.equal(handlers.size, 8);
 
   controller.removeHandlers();
 
   assert.equal(handlers.size, 0);
+});
+
+test('deve permitir buscar vacinas para usuário autorizado', () => {
+  const { handlers, event } = createTestEnvironment();
+
+  const resultado = handlers.get(
+    'notificacoes:buscar-vacinas-pendentes'
+  )!(event);
+
+  assert.deepEqual(resultado, []);
+});
+
+test('deve bloquear notificações sem usuário autenticado', async () => {
+  const { handlers, event } = createTestEnvironment(false);
+
+  await assert.rejects(
+    async () =>
+      await handlers.get('notificacoes:enviar')!(event),
+    /Acesso não autorizado/
+  );
+});
+
+test('deve bloquear notificações sem permissão clínica', () => {
+  const { handlers, event } = createTestEnvironment(
+    true,
+    false
+  );
+
+  assert.throws(
+    () =>
+      handlers.get(
+        'notificacoes:buscar-vacinas-pendentes'
+      )!(event),
+    /Acesso não autorizado/
+  );
 });

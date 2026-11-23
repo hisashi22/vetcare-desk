@@ -5,6 +5,11 @@ import type {
 
 import type { UserRole } from './types';
 
+import type {
+  VacinaPendente,
+  ResultadoNotificacoes
+} from './notification-types';
+
 interface LoginData {
   email: string;
   password: string;
@@ -31,6 +36,11 @@ interface VetCareAPI {
     hasPermission(permission: Permission): Promise<boolean>;
     createUser(data: RegisterUserData): Promise<AuthenticatedUser>;
     registerInitialAdmin(data: RegisterAdminData): Promise<AuthenticatedUser>;
+  };
+
+  notificacoes: {
+    buscarVacinasPendentes(): Promise<VacinaPendente[]>;
+    enviarNotificacoes(): Promise<ResultadoNotificacoes>;
   };
 }
 

@@ -1,10 +1,16 @@
-
 import { contextBridge, ipcRenderer } from 'electron';
+
 import type {
   AuthenticatedUser,
   Permission
 } from '../shared/auth-types';
+
 import type { UserRole } from '../shared/types';
+
+import type {
+  VacinaPendente,
+  ResultadoNotificacoes
+} from '../shared/notification-types';
 
 interface LoginData {
   email: string;
@@ -45,6 +51,14 @@ const vetcareAPI = {
       data: RegisterAdminData
     ): Promise<AuthenticatedUser> =>
       ipcRenderer.invoke('auth:register-initial-admin', data)
+  },
+
+  notificacoes: {
+    buscarVacinasPendentes: (): Promise<VacinaPendente[]> =>
+      ipcRenderer.invoke('notificacoes:buscar-vacinas-pendentes'),
+
+    enviarNotificacoes: (): Promise<ResultadoNotificacoes> =>
+      ipcRenderer.invoke('notificacoes:enviar')
   }
 };
 

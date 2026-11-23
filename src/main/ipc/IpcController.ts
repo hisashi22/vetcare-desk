@@ -1,9 +1,8 @@
-
-import { SecurityValidator } from '../security/SecurityValidator';
 import { SecurityValidator } from '../security/SecurityValidator';
 import { NotificacaoVacinaService } from '../services/NotificacaoVacinaService';
 import { AuthService, Permission } from '../security/AuthService';
 import { ClinicaService } from '../services/ClinicaService';
+import { CepService } from '../services/ApiServices';
 
 import type { UserRole, Tutor, Pet } from '../../shared/types';
 
@@ -19,6 +18,8 @@ type PetData = Omit<Pet, 'id'>;
 export class IpcController {
   private readonly authService: AuthService;
   private readonly clinicaService: ClinicaService;
+  private readonly notificacaoVacinaService: NotificacaoVacinaService;
+  private readonly cepService: CepService;
   private readonly getMainWindow: () => BrowserWindow | null;
   private readonly ipcMain: IpcMain;
   private registered = false;
@@ -37,40 +38,34 @@ export class IpcController {
     'clinical:create-tutor',
     'clinical:update-tutor',
     'clinical:delete-tutor',
+    'clinical:buscar-cep',
 
     'clinical:list-pets',
     'clinical:get-pet',
     'clinical:list-pets-by-tutor',
     'clinical:create-pet',
     'clinical:update-pet',
-    'clinical:delete-pet'
+    'clinical:delete-pet',
+
+    'notificacoes:buscar-vacinas-pendentes',
+    'notificacoes:enviar'
   ];
 
   constructor(
     authService: AuthService,
     getMainWindow: () => BrowserWindow | null,
     ipcMain: IpcMain,
-    clinicaService: ClinicaService = new ClinicaService()
+    clinicaService: ClinicaService = new ClinicaService(),
+    notificacaoVacinaService: NotificacaoVacinaService = new NotificacaoVacinaService(),
+    cepService: CepService = new CepService()
   ) {
     this.authService = authService;
     this.getMainWindow = getMainWindow;
     this.ipcMain = ipcMain;
     this.clinicaService = clinicaService;
+    this.notificacaoVacinaService = notificacaoVacinaService;
+    this.cepService = cepService;
   }
-  private readonly notificacaoVacinaService: NotificacaoVacinaService;
-
-  constructor(
-  authService: AuthService,
-  getMainWindow: () => BrowserWindow | null,
-  ipcMain: IpcMain,
-  notificacaoVacinaService: NotificacaoVacinaService =
-    new NotificacaoVacinaService()
-) {
-  this.authService = authService;
-  this.getMainWindow = getMainWindow;
-  this.ipcMain = ipcMain;
-  this.notificacaoVacinaService = notificacaoVacinaService;
-}
 
   private validateSender(event: IpcMainInvokeEvent): void {
     const mainWindow = this.getMainWindow();
@@ -86,17 +81,15 @@ export class IpcController {
   }
 
   private validateClinicalAccess(): void {
-  const usuario = this.authService.getCurrentUser();
+    const usuario = this.authService.getCurrentUser();
 
-  if (
-    !usuario ||
-    !this.authService.hasPermission('MANAGE_CLINICAL')
-  ) {
-    throw new Error(
-      'Acesso não autorizado às notificações de vacinação.'
-    );
+    if (
+      !usuario ||
+      !this.authService.hasPermission('MANAGE_CLINICAL')
+    ) {
+      throw new Error('Acesso não autorizado ao módulo clínico.');
+    }
   }
-}
 
   private validateLoginData(data: unknown): void {
     if (!data || typeof data !== 'object' || Array.isArray(data)) {
@@ -218,10 +211,7 @@ export class IpcController {
 
   private authorizeClinical(event: IpcMainInvokeEvent): void {
     this.validateSender(event);
-
-    if (!this.authService.hasPermission('MANAGE_CLINICAL')) {
-      throw new Error('Você não tem permissão para acessar o módulo clínico.');
-    }
+    this.validateClinicalAccess();
   }
 
   public registerHandlers(): void {
@@ -230,7 +220,6 @@ export class IpcController {
     }
 
     // AUTENTICAÇÃO
-
     this.ipcMain.handle(
       'auth:register-initial-admin',
       (event: IpcMainInvokeEvent, data: unknown) => {
@@ -344,8 +333,7 @@ export class IpcController {
       }
     );
 
-    // TUTORES
-
+    // TUTORES & VIACEP
     this.ipcMain.handle(
       'clinical:list-tutors',
       (event: IpcMainInvokeEvent) => {
@@ -405,8 +393,20 @@ export class IpcController {
       }
     );
 
-    // PETS
+    this.ipcMain.handle(
+      'clinical:buscar-cep',
+      async (event: IpcMainInvokeEvent, cep: unknown) => {
+        this.authorizeClinical(event);
 
+        if (typeof cep !== 'string') {
+          throw new Error('CEP inválido.');
+        }
+
+        return this.cepService.buscarEnderecoPorCep(cep);
+      }
+    );
+
+    // PETS
     this.ipcMain.handle(
       'clinical:list-pets',
       (event: IpcMainInvokeEvent) => {
@@ -431,12 +431,6 @@ export class IpcController {
         return this.clinicaService.listarPetsDoTutor(
           this.validateId(tutorId)
         );
-      'notificacoes:buscar-vacinas-pendentes',
-      (event: IpcMainInvokeEvent) => {
-        this.validateSender(event);
-        this.validateClinicalAccess();
-
-        return this.notificacaoVacinaService.buscarVacinasPendentes();
       }
     );
 
@@ -467,11 +461,22 @@ export class IpcController {
       (event: IpcMainInvokeEvent, id: unknown) => {
         this.authorizeClinical(event);
         return this.clinicaService.excluirPet(this.validateId(id));
+      }
+    );
+
+    // NOTIFICAÇÕES BREVO
+    this.ipcMain.handle(
+      'notificacoes:buscar-vacinas-pendentes',
+      (event: IpcMainInvokeEvent) => {
+        this.authorizeClinical(event);
+        return this.notificacaoVacinaService.buscarVacinasPendentes();
+      }
+    );
+
+    this.ipcMain.handle(
       'notificacoes:enviar',
       async (event: IpcMainInvokeEvent) => {
-        this.validateSender(event);
-        this.validateClinicalAccess();
-
+        this.authorizeClinical(event);
         return this.notificacaoVacinaService.enviarNotificacoes();
       }
     );
@@ -481,18 +486,6 @@ export class IpcController {
 
   public removeHandlers(): void {
     for (const channel of this.channels) {
-    const channels = [
-      'auth:register-initial-admin',
-      'auth:login',
-      'auth:logout',
-      'auth:get-current-user',
-      'auth:has-permission',
-      'auth:create-user',
-      'notificacoes:buscar-vacinas-pendentes',
-      'notificacoes:enviar'
-    ];
-
-    for (const channel of channels) {
       this.ipcMain.removeHandler(channel);
     }
 

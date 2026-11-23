@@ -1,6 +1,6 @@
-
 import type { AuthenticatedUser } from '../shared/auth-types';
 import type { Tutor, Pet } from '../shared/types';
+import type { VacinaPendente } from '../shared/notification-types';
 
 type TutorData = Omit<Tutor, 'id'>;
 type PetData = Omit<Pet, 'id'>;
@@ -17,6 +17,8 @@ if (!root) {
 let currentUser: AuthenticatedUser | null = null;
 let tutors: Tutor[] = [];
 let pets: Pet[] = [];
+let vacinasPendentes: VacinaPendente[] = [];
+let tutorFilterId = 0;
 
 let activeView: View = 'dashboard';
 let authMode: AuthMode = 'login';
@@ -43,6 +45,13 @@ function setNotice(message: string): void {
 
 function getField(formData: FormData, name: string): string {
   return String(formData.get(name) ?? '').trim();
+}
+
+function formatError(error: unknown, fallback: string): string {
+  if (error instanceof Error) {
+    return error.message.replace(/^Error invoking remote method '[^']+':\s*Error:\s*/i, '');
+  }
+  return fallback;
 }
 
 function feedback(): string {
@@ -141,6 +150,20 @@ function renderAuth(): void {
 }
 
 function renderDashboard(): string {
+  const vacinaRows = vacinasPendentes
+    .map(
+      (vacina) => `
+      <tr>
+        <td><strong>${escapeHtml(vacina.pet_nome)}</strong></td>
+        <td>${escapeHtml(vacina.tutor_nome)}</td>
+        <td>${escapeHtml(vacina.tutor_email ?? 'Sem e-mail')}</td>
+        <td>${escapeHtml(vacina.produto_nome)}</td>
+        <td>${escapeHtml(vacina.proxima_dose)}</td>
+      </tr>
+    `
+    )
+    .join('');
+
   return `
     <section class="page-heading">
       <div>
@@ -166,12 +189,10 @@ function renderDashboard(): string {
       </article>
 
       <article class="stat-card">
-        <span class="stat-label">Usuário conectado</span>
-        <strong class="role-value">
-          ${escapeHtml(currentUser?.role)}
-        </strong>
+        <span class="stat-label">Vacinas próximas (15 dias)</span>
+        <strong>${vacinasPendentes.length}</strong>
         <span class="stat-description">
-          ${escapeHtml(currentUser?.email)}
+          ${escapeHtml(currentUser?.role)} — ${escapeHtml(currentUser?.email)}
         </span>
       </article>
     </section>
@@ -180,7 +201,7 @@ function renderDashboard(): string {
       <div class="section-heading">
         <div>
           <h2>Acesso rápido</h2>
-          <p class="muted">Gerencie os principais cadastros.</p>
+          <p class="muted">Gerencie os principais cadastros e lembretes.</p>
         </div>
       </div>
 
@@ -200,7 +221,46 @@ function renderDashboard(): string {
         <button class="button secondary" data-action="go-pets">
           Consultar pets
         </button>
+
+        <button class="button secondary" data-action="send-vaccine-reminders">
+          Avisar tutores (Vacinas)
+        </button>
       </div>
+    </section>
+
+    <section class="content-card" style="margin-top: 22px;">
+      <div class="section-heading">
+        <div>
+          <h2>Alertas de reforço de vacina</h2>
+          <p class="muted">Doses previstas para os próximos 15 dias</p>
+        </div>
+      </div>
+
+      ${
+        vacinasPendentes.length
+          ? `
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Pet</th>
+                    <th>Tutor</th>
+                    <th>E-mail</th>
+                    <th>Vacina</th>
+                    <th>Próxima dose</th>
+                  </tr>
+                </thead>
+                <tbody>${vacinaRows}</tbody>
+              </table>
+            </div>
+          `
+          : `
+            <div class="empty-state">
+              <h3>Nenhuma vacina pendente</h3>
+              <p>Não há reforços agendados para os próximos 15 dias.</p>
+            </div>
+          `
+      }
     </section>
   `;
 }
@@ -214,6 +274,7 @@ function renderTutors(): string {
       <td>${escapeHtml(tutor.cpf)}</td>
       <td>${escapeHtml(tutor.telefone || '—')}</td>
       <td>${escapeHtml(tutor.email || '—')}</td>
+      <td>${escapeHtml(tutor.cidade ? `${tutor.cidade}/${tutor.uf}` : '—')}</td>
       <td>
         <div class="table-actions">
           <button
@@ -270,6 +331,7 @@ function renderTutors(): string {
                     <th>CPF</th>
                     <th>Telefone</th>
                     <th>E-mail</th>
+                    <th>Cidade/UF</th>
                     <th>Ações</th>
                   </tr>
                 </thead>
@@ -292,7 +354,22 @@ function renderTutors(): string {
 }
 
 function renderPets(): string {
-  const rows = pets.map((pet) => {
+  const filteredPets =
+    tutorFilterId > 0
+      ? pets.filter((pet) => pet.tutorId === tutorFilterId)
+      : pets;
+
+  const tutorFilterOptions = tutors
+    .map(
+      (tutor) => `
+      <option value="${tutor.id}" ${tutorFilterId === tutor.id ? 'selected' : ''}>
+        ${escapeHtml(tutor.nome)}
+      </option>
+    `
+    )
+    .join('');
+
+  const rows = filteredPets.map((pet) => {
     const tutor = tutors.find((item) => item.id === pet.tutorId);
 
     return `
@@ -301,7 +378,7 @@ function renderPets(): string {
         <td>${escapeHtml(pet.especie)}</td>
         <td>${escapeHtml(pet.raca || '—')}</td>
         <td>${escapeHtml(tutor?.nome || 'Tutor não encontrado')}</td>
-        <td>${escapeHtml(pet.idade)} ano(s)</td>
+        <td>${escapeHtml(pet.idade)} ano(s) | ${escapeHtml(pet.peso)} kg</td>
         <td>
           <div class="table-actions">
             <button
@@ -348,12 +425,19 @@ function renderPets(): string {
       <div class="section-heading">
         <div>
           <h2>Lista de pets</h2>
-          <p class="muted">${pets.length} registro(s)</p>
+          <p class="muted">${filteredPets.length} registro(s)</p>
+        </div>
+
+        <div>
+          <select id="pet-tutor-filter" aria-label="Filtrar por tutor">
+            <option value="0">Todos os tutores</option>
+            ${tutorFilterOptions}
+          </select>
         </div>
       </div>
 
       ${
-        pets.length
+        filteredPets.length
           ? `
             <div class="table-wrapper">
               <table>
@@ -363,7 +447,7 @@ function renderPets(): string {
                     <th>Espécie</th>
                     <th>Raça</th>
                     <th>Tutor</th>
-                    <th>Idade</th>
+                    <th>Idade / Peso</th>
                     <th>Ações</th>
                   </tr>
                 </thead>
@@ -373,11 +457,11 @@ function renderPets(): string {
           `
           : `
             <div class="empty-state">
-              <h3>Nenhum pet cadastrado</h3>
+              <h3>Nenhum pet encontrado</h3>
               <p>
                 ${
                   tutors.length
-                    ? 'Cadastre o primeiro animal.'
+                    ? 'Cadastre um animal ou altere o filtro de tutor.'
                     : 'Cadastre um tutor antes de cadastrar um pet.'
                 }
               </p>
@@ -475,6 +559,14 @@ function renderMain(): void {
 
     <dialog id="form-dialog" class="form-dialog"></dialog>
   `;
+
+  const filterSelect = document.querySelector<HTMLSelectElement>('#pet-tutor-filter');
+  if (filterSelect) {
+    filterSelect.addEventListener('change', () => {
+      tutorFilterId = Number(filterSelect.value) || 0;
+      render();
+    });
+  }
 }
 
 function render(): void {
@@ -486,13 +578,15 @@ function render(): void {
 }
 
 async function loadClinicalData(): Promise<void> {
-  const [loadedTutors, loadedPets] = await Promise.all([
+  const [loadedTutors, loadedPets, loadedVacinas] = await Promise.all([
     window.vetcare.clinical.listTutors(),
-    window.vetcare.clinical.listPets()
+    window.vetcare.clinical.listPets(),
+    window.vetcare.notificacoes.buscarVacinasPendentes()
   ]);
 
   tutors = loadedTutors;
   pets = loadedPets;
+  vacinasPendentes = loadedVacinas;
 }
 
 function openTutorDialog(id?: number): void {
@@ -570,13 +664,22 @@ function openTutorDialog(id?: number): void {
       <div class="form-grid">
         <div>
           <label for="tutor-cep">CEP</label>
-          <input
-            id="tutor-cep"
-            name="cep"
-            maxlength="9"
-            placeholder="00000-000"
-            value="${escapeHtml(tutor?.cep)}"
-          >
+          <div style="display: flex; gap: 8px;">
+            <input
+              id="tutor-cep"
+              name="cep"
+              maxlength="9"
+              placeholder="00000-000"
+              value="${escapeHtml(tutor?.cep)}"
+            >
+            <button
+              type="button"
+              class="button secondary"
+              data-action="buscar-cep"
+            >
+              Buscar CEP
+            </button>
+          </div>
         </div>
 
         <div>
@@ -620,6 +723,8 @@ function openTutorDialog(id?: number): void {
         </div>
       </div>
 
+      <p id="modal-cep-status" class="muted" style="margin: 4px 0 0;"></p>
+
       <div class="modal-actions">
         <button
           type="button"
@@ -638,6 +743,40 @@ function openTutorDialog(id?: number): void {
 
   dialog.dataset.editId = tutor ? String(tutor.id) : '';
   dialog.showModal();
+}
+
+async function handleBuscarCep(button: HTMLButtonElement): Promise<void> {
+  const cepInput = document.querySelector<HTMLInputElement>('#tutor-cep');
+  const logradouroInput = document.querySelector<HTMLInputElement>('#tutor-logradouro');
+  const bairroInput = document.querySelector<HTMLInputElement>('#tutor-bairro');
+  const cidadeInput = document.querySelector<HTMLInputElement>('#tutor-cidade');
+  const ufInput = document.querySelector<HTMLInputElement>('#tutor-uf');
+  const statusEl = document.querySelector<HTMLParagraphElement>('#modal-cep-status');
+
+  if (!cepInput || !logradouroInput || !bairroInput || !cidadeInput || !ufInput) return;
+
+  button.disabled = true;
+  button.textContent = 'Buscando...';
+  if (statusEl) statusEl.textContent = '';
+
+  try {
+    const endereco = await window.vetcare.clinical.buscarCep(cepInput.value);
+    cepInput.value = endereco.cep;
+    logradouroInput.value = endereco.logradouro;
+    bairroInput.value = endereco.bairro;
+    cidadeInput.value = endereco.cidade;
+    ufInput.value = endereco.uf;
+    if (statusEl) {
+      statusEl.textContent = 'Endereço preenchido via ViaCEP.';
+    }
+  } catch (error) {
+    if (statusEl) {
+      statusEl.textContent = formatError(error, 'Não foi possível consultar o CEP.');
+    }
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Buscar CEP';
+  }
 }
 
 function openPetDialog(id?: number): void {
@@ -914,6 +1053,10 @@ async function handleClick(event: MouseEvent): Promise<void> {
         openTutorDialog(id);
         break;
 
+      case 'buscar-cep':
+        await handleBuscarCep(button);
+        break;
+
       case 'new-pet':
         openPetDialog();
         break;
@@ -942,11 +1085,20 @@ async function handleClick(event: MouseEvent): Promise<void> {
         }
         break;
 
+      case 'send-vaccine-reminders': {
+        const res = await window.vetcare.notificacoes.enviarNotificacoes();
+        setNotice(
+          `Notificações Brevo: ${res.enviados} enviado(s), ${res.ignorados} ignorado(s), ${res.falhas} falha(s).`
+        );
+        break;
+      }
+
       case 'logout':
         await window.vetcare.auth.logout();
         currentUser = null;
         tutors = [];
         pets = [];
+        vacinasPendentes = [];
         authMode = 'login';
         notice = '';
         render();
@@ -954,9 +1106,7 @@ async function handleClick(event: MouseEvent): Promise<void> {
     }
   } catch (error) {
     setNotice(
-      error instanceof Error
-        ? error.message
-        : 'Não foi possível executar a operação.'
+      formatError(error, 'Não foi possível executar a operação.')
     );
   }
 }
@@ -985,9 +1135,7 @@ async function handleSubmit(event: SubmitEvent): Promise<void> {
     }
   } catch (error) {
     setNotice(
-      error instanceof Error
-        ? error.message
-        : 'Não foi possível salvar os dados.'
+      formatError(error, 'Não foi possível salvar os dados.')
     );
   }
 }

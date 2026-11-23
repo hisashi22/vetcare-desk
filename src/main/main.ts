@@ -22,6 +22,18 @@ async function createWindow(): Promise<void> {
     }
   });
 
+  mainWindow.webContents.setWindowOpenHandler(() => {
+    return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    const currentUrl = mainWindow?.webContents.getURL();
+
+    if (navigationUrl !== currentUrl) {
+      event.preventDefault();
+    }
+  });
+
   await mainWindow.loadFile(
     path.join(__dirname, '../../src/renderer/index.html')
   );

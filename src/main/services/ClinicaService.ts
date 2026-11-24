@@ -1,12 +1,22 @@
-
 import { AppRepositories } from '../repositories/AppRepositories';
-import { Tutor, Pet } from '../../shared/types';
+import { CambioService } from './ApiServices';
+import {
+  Tutor,
+  Pet,
+  Fornecedor,
+  ProdutoEstoque
+} from '../../shared/types';
 
 export class ClinicaService {
   private readonly repositories: AppRepositories;
+  private readonly cambioService: CambioService;
 
-  constructor(repositories = new AppRepositories()) {
+  constructor(
+    repositories = new AppRepositories(),
+    cambioService = new CambioService()
+  ) {
     this.repositories = repositories;
+    this.cambioService = cambioService;
   }
 
   private validateId(id: number): void {
@@ -147,6 +157,79 @@ export class ClinicaService {
     }
   }
 
+  private validateFornecedor(data: Omit<Fornecedor, 'id'>): void {
+    if (!data || typeof data !== 'object') {
+      throw new Error('Dados do fornecedor inválidos.');
+    }
+
+    if (typeof data.nome !== 'string' || !data.nome.trim()) {
+      throw new Error('Nome do fornecedor é obrigatório.');
+    }
+
+    if (
+      typeof data.documento !== 'string' ||
+      typeof data.email !== 'string' ||
+      typeof data.telefone !== 'string' ||
+      typeof data.pais !== 'string'
+    ) {
+      throw new Error('Dados complementares do fornecedor inválidos.');
+    }
+
+    if (
+      data.email &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)
+    ) {
+      throw new Error('E-mail do fornecedor inválido.');
+    }
+
+    if (data.moeda !== 'BRL' && data.moeda !== 'USD') {
+      throw new Error('Moeda do fornecedor deve ser BRL ou USD.');
+    }
+  }
+
+  private validateProdutoEstoque(data: Omit<ProdutoEstoque, 'id'>): Fornecedor {
+    if (!data || typeof data !== 'object') {
+      throw new Error('Dados do produto inválidos.');
+    }
+
+    this.validateId(data.fornecedorId);
+
+    const fornecedor = this.repositories.fornecedores.findById(data.fornecedorId);
+    if (!fornecedor) {
+      throw new Error('Fornecedor vinculado não encontrado.');
+    }
+
+    if (typeof data.nome !== 'string' || !data.nome.trim()) {
+      throw new Error('Nome do produto é obrigatório.');
+    }
+
+    if (typeof data.categoria !== 'string' || !data.categoria.trim()) {
+      throw new Error('Categoria do produto é obrigatória.');
+    }
+
+    if (
+      typeof data.lote !== 'string' ||
+      typeof data.validade !== 'string' ||
+      typeof data.bula !== 'string'
+    ) {
+      throw new Error('Dados complementares do produto inválidos.');
+    }
+
+    if (!Number.isInteger(data.quantidade) || data.quantidade < 0) {
+      throw new Error('Quantidade em estoque inválida.');
+    }
+
+    if (!Number.isInteger(data.estoqueMinimo) || data.estoqueMinimo < 0) {
+      throw new Error('Estoque mínimo inválido.');
+    }
+
+    if (typeof data.custo !== 'number' || !Number.isFinite(data.custo) || data.custo < 0) {
+      throw new Error('Custo do produto inválido.');
+    }
+
+    return fornecedor;
+  }
+
   // =========================
   // TUTORES
   // =========================
@@ -263,4 +346,122 @@ export class ClinicaService {
     this.validateId(id);
     return this.repositories.pets.deletePet(id);
   }
+
+  // =========================
+  // FORNECEDORES
+  // =========================
+
+  public listarFornecedores(): Fornecedor[] {
+    return this.repositories.fornecedores.findAll();
+  }
+
+  public buscarFornecedor(id: number): Fornecedor | null {
+    this.validateId(id);
+    return this.repositories.fornecedores.findById(id);
+  }
+
+  public cadastrarFornecedor(data: Omit<Fornecedor, 'id'>): number {
+    this.validateFornecedor(data);
+
+    return this.repositories.fornecedores.createFornecedor({
+      ...data,
+      nome: data.nome.trim(),
+      documento: data.documento.trim(),
+      email: data.email.trim(),
+      telefone: data.telefone.trim(),
+      pais: data.pais.trim() || (data.moeda === 'USD' ? 'Exterior' : 'Brasil')
+    });
+  }
+
+  public atualizarFornecedor(
+    id: number,
+    data: Omit<Fornecedor, 'id'>
+  ): boolean {
+    this.validateId(id);
+    this.validateFornecedor(data);
+
+    if (!this.repositories.fornecedores.findById(id)) {
+      return false;
+    }
+
+    return this.repositories.fornecedores.updateFornecedor(id, {
+      ...data,
+      nome: data.nome.trim(),
+      documento: data.documento.trim(),
+      email: data.email.trim(),
+      telefone: data.telefone.trim(),
+      pais: data.pais.trim() || (data.moeda === 'USD' ? 'Exterior' : 'Brasil')
+    });
+  }
+
+  public excluirFornecedor(id: number): boolean {
+    this.validateId(id);
+
+    if (this.repositories.produtosEstoque.findByFornecedorId(id).length > 0) {
+throw new Error(
+'Não é possível excluir um fornecedor que possui produtos vinculados no estoque.'
+);
+}
+return this.repositories.fornecedores.deleteFornecedor(id);
+}
+// =========================
+// ESTOQUE & CÂMBIO USD/BRL
+// =========================
+public listarProdutosEstoque(): ProdutoEstoque[] {
+return this.repositories.produtosEstoque.findAll();
+}
+public buscarProdutoEstoque(id: number): ProdutoEstoque | null {
+this.validateId(id);
+return this.repositories.produtosEstoque.findById(id);
+}
+public listarProdutosEstoqueCritico(): ProdutoEstoque[] {
+return this.repositories.produtosEstoque.findEstoqueCritico();
+}
+public async cadastrarProdutoEstoque(
+data: Omit<ProdutoEstoque, 'id'>
+): Promise<number> {
+const fornecedor = this.validateProdutoEstoque(data);
+let custoFinalBrl = Number(data.custo.toFixed(2));
+if (fornecedor.moeda === 'USD' && data.custo > 0) {
+const conversao = await this.cambioService.converterUsdParaBrl(data.custo);
+custoFinalBrl = conversao.valorBrl;
+}
+return this.repositories.produtosEstoque.createProduto({
+...data,
+nome: data.nome.trim(),
+categoria: data.categoria.trim(),
+lote: data.lote.trim(),
+validade: data.validade.trim(),
+bula: data.bula.trim(),
+custo: custoFinalBrl
+});
+}
+public async atualizarProdutoEstoque(
+id: number,
+data: Omit<ProdutoEstoque, 'id'>
+): Promise<boolean> {
+this.validateId(id);
+const fornecedor = this.validateProdutoEstoque(data);
+if (!this.repositories.produtosEstoque.findById(id)) {
+return false;
+}
+let custoFinalBrl = Number(data.custo.toFixed(2));
+if (fornecedor.moeda === 'USD' && data.custo > 0) {
+const conversao = await this.cambioService.converterUsdParaBrl(data.custo);
+custoFinalBrl = conversao.valorBrl;
+}
+return this.repositories.produtosEstoque.updateProduto(id, {
+...data,
+nome: data.nome.trim(),
+categoria: data.categoria.trim(),
+lote: data.lote.trim(),
+validade: data.validade.trim(),
+bula: data.bula.trim(),
+custo: custoFinalBrl
+});
+}
+public excluirProdutoEstoque(id: number): boolean {
+this.validateId(id);
+return this.repositories.produtosEstoque.deleteProduto(id);
+}
 }

@@ -1,11 +1,18 @@
 import type { AuthenticatedUser } from '../shared/auth-types';
-import type { Tutor, Pet } from '../shared/types';
+import type {
+  Tutor,
+  Pet,
+  Fornecedor,
+  ProdutoEstoque
+} from '../shared/types';
 import type { VacinaPendente } from '../shared/notification-types';
 
 type TutorData = Omit<Tutor, 'id'>;
 type PetData = Omit<Pet, 'id'>;
+type FornecedorData = Omit<Fornecedor, 'id'>;
+type ProdutoEstoqueData = Omit<ProdutoEstoque, 'id'>;
 
-type View = 'dashboard' | 'tutors' | 'pets';
+type View = 'dashboard' | 'tutors' | 'pets' | 'stock' | 'suppliers';
 type AuthMode = 'login' | 'register';
 
 const root = document.querySelector<HTMLDivElement>('#app');
@@ -17,7 +24,11 @@ if (!root) {
 let currentUser: AuthenticatedUser | null = null;
 let tutors: Tutor[] = [];
 let pets: Pet[] = [];
+let suppliers: Fornecedor[] = [];
+let products: ProdutoEstoque[] = [];
+let criticalProducts: ProdutoEstoque[] = [];
 let vacinasPendentes: VacinaPendente[] = [];
+let usdRateInfo: { valorCompra: number; atualizadoEm: string } | null = null;
 let tutorFilterId = 0;
 
 let activeView: View = 'dashboard';
@@ -25,16 +36,18 @@ let authMode: AuthMode = 'login';
 let notice = '';
 
 function escapeHtml(value: unknown): string {
-  return String(value ?? '').replace(/[&<>"']/g, (character) => {
-    const entities: Record<string, string> = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;'
-    };
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, String.fromCharCode(38, 35, 51, 57, 59));
+}
 
-    return entities[character];
+function formatCurrencyBrl(value: number): string {
+  return value.toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL'
   });
 }
 
@@ -148,211 +161,6 @@ function renderAuth(): void {
     </main>
   `;
 }
-
-function renderDashboard(): string {
-  const vacinaRows = vacinasPendentes
-    .map(
-      (vacina) => `
-      <tr>
-        <td><strong>${escapeHtml(vacina.pet_nome)}</strong></td>
-        <td>${escapeHtml(vacina.tutor_nome)}</td>
-        <td>${escapeHtml(vacina.tutor_email ?? 'Sem e-mail')}</td>
-        <td>${escapeHtml(vacina.produto_nome)}</td>
-        <td>${escapeHtml(vacina.proxima_dose)}</td>
-      </tr>
-    `
-    )
-    .join('');
-
-  return `
-    <section class="page-heading">
-      <div>
-        <p class="eyebrow">VISÃO GERAL</p>
-        <h1>Olá, ${escapeHtml(currentUser?.nome)}!</h1>
-        <p class="muted">
-          Bem-vindo ao painel de gestão do VetCare.
-        </p>
-      </div>
-    </section>
-
-    <section class="stats-grid">
-      <article class="stat-card">
-        <span class="stat-label">Tutores cadastrados</span>
-        <strong>${tutors.length}</strong>
-        <span class="stat-description">Registros no sistema</span>
-      </article>
-
-      <article class="stat-card">
-        <span class="stat-label">Pets cadastrados</span>
-        <strong>${pets.length}</strong>
-        <span class="stat-description">Animais registrados</span>
-      </article>
-
-      <article class="stat-card">
-        <span class="stat-label">Vacinas próximas (15 dias)</span>
-        <strong>${vacinasPendentes.length}</strong>
-        <span class="stat-description">
-          ${escapeHtml(currentUser?.role)} — ${escapeHtml(currentUser?.email)}
-        </span>
-      </article>
-    </section>
-
-    <section class="content-card">
-      <div class="section-heading">
-        <div>
-          <h2>Acesso rápido</h2>
-          <p class="muted">Gerencie os principais cadastros e lembretes.</p>
-        </div>
-      </div>
-
-      <div class="quick-actions">
-        <button class="button primary" data-action="new-tutor">
-          + Cadastrar tutor
-        </button>
-
-        <button class="button secondary" data-action="new-pet">
-          + Cadastrar pet
-        </button>
-
-        <button class="button secondary" data-action="go-tutors">
-          Consultar tutores
-        </button>
-
-        <button class="button secondary" data-action="go-pets">
-          Consultar pets
-        </button>
-
-        <button class="button secondary" data-action="send-vaccine-reminders">
-          Avisar tutores (Vacinas)
-        </button>
-      </div>
-    </section>
-
-    <section class="content-card" style="margin-top: 22px;">
-      <div class="section-heading">
-        <div>
-          <h2>Alertas de reforço de vacina</h2>
-          <p class="muted">Doses previstas para os próximos 15 dias</p>
-        </div>
-      </div>
-
-      ${
-        vacinasPendentes.length
-          ? `
-            <div class="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Pet</th>
-                    <th>Tutor</th>
-                    <th>E-mail</th>
-                    <th>Vacina</th>
-                    <th>Próxima dose</th>
-                  </tr>
-                </thead>
-                <tbody>${vacinaRows}</tbody>
-              </table>
-            </div>
-          `
-          : `
-            <div class="empty-state">
-              <h3>Nenhuma vacina pendente</h3>
-              <p>Não há reforços agendados para os próximos 15 dias.</p>
-            </div>
-          `
-      }
-    </section>
-  `;
-}
-
-function renderTutors(): string {
-  const rows = tutors.map((tutor) => `
-    <tr>
-      <td>
-        <strong>${escapeHtml(tutor.nome)}</strong>
-      </td>
-      <td>${escapeHtml(tutor.cpf)}</td>
-      <td>${escapeHtml(tutor.telefone || '—')}</td>
-      <td>${escapeHtml(tutor.email || '—')}</td>
-      <td>${escapeHtml(tutor.cidade ? `${tutor.cidade}/${tutor.uf}` : '—')}</td>
-      <td>
-        <div class="table-actions">
-          <button
-            class="button small secondary"
-            data-action="edit-tutor"
-            data-id="${tutor.id}"
-          >
-            Editar
-          </button>
-
-          <button
-            class="button small danger"
-            data-action="delete-tutor"
-            data-id="${tutor.id}"
-          >
-            Excluir
-          </button>
-        </div>
-      </td>
-    </tr>
-  `).join('');
-
-  return `
-    <section class="page-heading">
-      <div>
-        <p class="eyebrow">CADASTROS</p>
-        <h1>Tutores</h1>
-        <p class="muted">
-          Gerencie os responsáveis pelos animais atendidos.
-        </p>
-      </div>
-
-      <button class="button primary" data-action="new-tutor">
-        + Novo tutor
-      </button>
-    </section>
-
-    <section class="content-card">
-      <div class="section-heading">
-        <div>
-          <h2>Lista de tutores</h2>
-          <p class="muted">${tutors.length} registro(s)</p>
-        </div>
-      </div>
-
-      ${
-        tutors.length
-          ? `
-            <div class="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Nome</th>
-                    <th>CPF</th>
-                    <th>Telefone</th>
-                    <th>E-mail</th>
-                    <th>Cidade/UF</th>
-                    <th>Ações</th>
-                  </tr>
-                </thead>
-                <tbody>${rows}</tbody>
-              </table>
-            </div>
-          `
-          : `
-            <div class="empty-state">
-              <h3>Nenhum tutor cadastrado</h3>
-              <p>Comece cadastrando o primeiro tutor.</p>
-              <button class="button primary" data-action="new-tutor">
-                Cadastrar tutor
-              </button>
-            </div>
-          `
-      }
-    </section>
-  `;
-}
-
 function renderPets(): string {
   const filteredPets =
     tutorFilterId > 0
@@ -484,14 +292,549 @@ function renderPets(): string {
     </section>
   `;
 }
+function renderSuppliers(): string {
+  const isAdmin = currentUser?.role === 'ADMIN';
+
+  const rows = suppliers
+    .map(
+      (supplier) => `
+      <tr>
+        <td><strong>${escapeHtml(supplier.nome)}</strong></td>
+        <td>${escapeHtml(supplier.documento || '—')}</td>
+        <td>${escapeHtml(supplier.pais)}</td>
+        <td>
+          <strong>${escapeHtml(supplier.moeda)}</strong>
+          ${supplier.moeda === 'USD' ? ' (Importado)' : ' (Nacional)'}
+        </td>
+        <td>${escapeHtml(supplier.email || supplier.telefone || '—')}</td>
+        <td>
+          ${
+            isAdmin
+              ? `
+                <div class="table-actions">
+                  <button
+                    class="button small secondary"
+                    data-action="edit-supplier"
+                    data-id="${supplier.id}"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    class="button small danger"
+                    data-action="delete-supplier"
+                    data-id="${supplier.id}"
+                  >
+                    Excluir
+                  </button>
+                </div>
+              `
+              : '<span class="muted">Somente leitura</span>'
+          }
+        </td>
+      </tr>
+    `
+    )
+    .join('');
+
+  return `
+    <section class="page-heading">
+      <div>
+        <p class="eyebrow">SUPRIMENTOS</p>
+        <h1>Fornecedores</h1>
+        <p class="muted">
+          Cadastro de fornecedores nacionais (BRL) e internacionais (USD).
+        </p>
+      </div>
+
+      ${
+        isAdmin
+          ? `
+            <button class="button primary" data-action="new-supplier">
+              + Novo fornecedor
+            </button>
+          `
+          : ''
+      }
+    </section>
+
+    <section class="content-card">
+      <div class="section-heading">
+        <div>
+          <h2>Lista de fornecedores</h2>
+          <p class="muted">${suppliers.length} registro(s)</p>
+        </div>
+      </div>
+
+      ${
+        suppliers.length
+          ? `
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Fornecedor</th>
+                    <th>CNPJ / Tax ID</th>
+                    <th>País</th>
+                    <th>Moeda</th>
+                    <th>Contato</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
+          `
+          : `
+            <div class="empty-state">
+              <h3>Nenhum fornecedor cadastrado</h3>
+              <p>Cadastre fornecedores nacionais ou importados antes de registrar insumos.</p>
+              ${
+                isAdmin
+                  ? `
+                    <button class="button primary" data-action="new-supplier">
+                      Cadastrar fornecedor
+                    </button>
+                  `
+                  : ''
+              }
+            </div>
+          `
+      }
+    </section>
+  `;
+}
+
+function renderStock(): string {
+  const isAdmin = currentUser?.role === 'ADMIN';
+
+  const rows = products
+    .map((item) => {
+      const supplier = suppliers.find((s) => s.id === item.fornecedorId);
+      const isLow = item.quantidade <= item.estoqueMinimo;
+
+      return `
+        <tr>
+          <td>
+            <strong>${escapeHtml(item.nome)}</strong>
+            ${
+              isLow
+                ? '<div style="color: #b91c1c; font-size: 12px; font-weight: 600;">⚠ Estoque crítico</div>'
+                : ''
+            }
+          </td>
+          <td>${escapeHtml(item.categoria)}</td>
+          <td>
+            ${escapeHtml(supplier?.nome || '—')}
+            ${supplier ? `<small class="muted"> (${escapeHtml(supplier.moeda)})</small>` : ''}
+          </td>
+          <td>${escapeHtml(item.lote || '—')} / ${escapeHtml(item.validade || '—')}</td>
+          <td>
+            <strong style="${isLow ? 'color: #b91c1c;' : ''}">
+              ${escapeHtml(item.quantidade)}
+            </strong> / mín. ${escapeHtml(item.estoqueMinimo)}
+          </td>
+          <td><strong>${escapeHtml(formatCurrencyBrl(item.custo))}</strong></td>
+          <td>
+            <div class="table-actions">
+              <button
+                class="button small secondary"
+                data-action="edit-product"
+                data-id="${item.id}"
+              >
+                Editar
+              </button>
+              ${
+                isAdmin
+                  ? `
+                    <button
+                      class="button small danger"
+                      data-action="delete-product"
+                      data-id="${item.id}"
+                    >
+                      Excluir
+                    </button>
+                  `
+                  : ''
+              }
+            </div>
+          </td>
+        </tr>
+      `;
+    })
+    .join('');
+
+  return `
+    <section class="page-heading">
+      <div>
+        <p class="eyebrow">SUPRIMENTOS & CÂMBIO</p>
+        <h1>Estoque de Vacinas e Medicamentos</h1>
+        <p class="muted">
+          Produtos de fornecedores em USD são convertidos automaticamente para BRL via AwesomeAPI.
+        </p>
+      </div>
+
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <button class="button secondary" data-action="refresh-usd">
+          ${
+            usdRateInfo
+              ? `Dólar: ${formatCurrencyBrl(usdRateInfo.valorCompra)}`
+              : 'Consultar Dólar (USD)'
+          }
+        </button>
+
+        <button
+          class="button primary"
+          data-action="new-product"
+          ${suppliers.length === 0 ? 'disabled' : ''}
+        >
+          + Novo item no estoque
+        </button>
+      </div>
+    </section>
+
+    <section class="content-card">
+      <div class="section-heading">
+        <div>
+          <h2>Itens em estoque</h2>
+          <p class="muted">
+            ${products.length} item(ns) | ${criticalProducts.length} em nível crítico
+          </p>
+        </div>
+      </div>
+
+      ${
+        products.length
+          ? `
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Produto / Vacina</th>
+                    <th>Categoria</th>
+                    <th>Fornecedor</th>
+                    <th>Lote / Validade</th>
+                    <th>Qtd. / Mín.</th>
+                    <th>Custo (BRL)</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
+          `
+          : `
+            <div class="empty-state">
+              <h3>Nenhum produto no estoque</h3>
+              <p>
+                ${
+                  suppliers.length
+                    ? 'Cadastre vacinas (ex.: V10) e medicamentos no estoque.'
+                    : 'Cadastre um fornecedor primeiro para vincular os produtos.'
+                }
+              </p>
+              ${
+                suppliers.length
+                  ? `
+                    <button class="button primary" data-action="new-product">
+                      Cadastrar produto
+                    </button>
+                  `
+                  : `
+                    <button class="button primary" data-action="go-suppliers">
+                      Ir para fornecedores
+                    </button>
+                  `
+              }
+            </div>
+          `
+      }
+    </section>
+  `;
+}
 
 function renderMain(): void {
+  const isAdmin = currentUser?.role === 'ADMIN';
+
+  function renderDashboard(): string {
+  const isAdmin = currentUser?.role === 'ADMIN';
+
+  const vacinaRows = vacinasPendentes
+    .map(
+      (vacina) => `
+      <tr>
+        <td><strong>${escapeHtml(vacina.pet_nome)}</strong></td>
+        <td>${escapeHtml(vacina.tutor_nome)}</td>
+        <td>${escapeHtml(vacina.tutor_email ?? 'Sem e-mail')}</td>
+        <td>${escapeHtml(vacina.produto_nome)}</td>
+        <td>${escapeHtml(vacina.proxima_dose)}</td>
+      </tr>
+    `
+    )
+    .join('');
+
+  const criticalRows = criticalProducts
+    .map((item) => {
+      const supplier = suppliers.find((s) => s.id === item.fornecedorId);
+      return `
+        <tr>
+          <td><strong>${escapeHtml(item.nome)}</strong></td>
+          <td>${escapeHtml(item.categoria)}</td>
+          <td>${escapeHtml(item.lote || '—')}</td>
+          <td><strong style="color: #b91c1c;">${escapeHtml(item.quantidade)} un.</strong></td>
+          <td>${escapeHtml(item.estoqueMinimo)} un.</td>
+          <td>${escapeHtml(supplier?.nome || '—')}</td>
+        </tr>
+      `;
+    })
+    .join('');
+
+  return `
+    <section class="page-heading">
+      <div>
+        <p class="eyebrow">VISÃO GERAL</p>
+        <h1>Olá, ${escapeHtml(currentUser?.nome)}!</h1>
+        <p class="muted">
+          Bem-vindo ao painel de gestão do VetCare.
+        </p>
+      </div>
+    </section>
+
+    <section class="stats-grid">
+      <article class="stat-card">
+        <span class="stat-label">Tutores / Pets</span>
+        <strong>${tutors.length} / ${pets.length}</strong>
+        <span class="stat-description">Clientes e animais registrados</span>
+      </article>
+
+      <article class="stat-card">
+        <span class="stat-label">Estoque crítico</span>
+        <strong style="${criticalProducts.length > 0 ? 'color: #b91c1c;' : ''}">
+          ${criticalProducts.length}
+        </strong>
+        <span class="stat-description">Itens no mínimo ou abaixo</span>
+      </article>
+
+      <article class="stat-card">
+        <span class="stat-label">Vacinas próximas (15 dias)</span>
+        <strong>${vacinasPendentes.length}</strong>
+        <span class="stat-description">
+          ${escapeHtml(currentUser?.role)} — ${escapeHtml(currentUser?.email)}
+        </span>
+      </article>
+    </section>
+
+    <section class="content-card">
+      <div class="section-heading">
+        <div>
+          <h2>Acesso rápido</h2>
+          <p class="muted">Gerencie cadastros, estoque e lembretes.</p>
+        </div>
+      </div>
+
+      <div class="quick-actions">
+        <button class="button primary" data-action="new-tutor">
+          + Cadastrar tutor
+        </button>
+
+        <button class="button secondary" data-action="new-pet">
+          + Cadastrar pet
+        </button>
+
+        <button class="button secondary" data-action="go-stock">
+          Ver estoque (${products.length})
+        </button>
+
+        ${
+          isAdmin
+            ? `
+              <button class="button secondary" data-action="go-suppliers">
+                Fornecedores (${suppliers.length})
+              </button>
+            `
+            : ''
+        }
+
+        <button class="button secondary" data-action="send-vaccine-reminders">
+          Avisar tutores (Vacinas)
+        </button>
+      </div>
+    </section>
+
+    <section class="content-card" style="margin-top: 22px;">
+      <div class="section-heading">
+        <div>
+          <h2>Alertas de estoque crítico</h2>
+          <p class="muted">Vacinas e medicamentos com quantidade igual ou inferior ao mínimo</p>
+        </div>
+        <button class="button small secondary" data-action="go-stock">
+          Gerenciar estoque
+        </button>
+      </div>
+
+      ${
+        criticalProducts.length
+          ? `
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Produto / Vacina</th>
+                    <th>Categoria</th>
+                    <th>Lote</th>
+                    <th>Atual</th>
+                    <th>Mínimo</th>
+                    <th>Fornecedor</th>
+                  </tr>
+                </thead>
+                <tbody>${criticalRows}</tbody>
+              </table>
+            </div>
+          `
+          : `
+            <div class="empty-state">
+              <h3>Estoque em nível seguro</h3>
+              <p>Nenhum produto ou vacina está abaixo do estoque mínimo.</p>
+            </div>
+          `
+      }
+    </section>
+
+    <section class="content-card" style="margin-top: 22px;">
+      <div class="section-heading">
+        <div>
+          <h2>Alertas de reforço de vacina</h2>
+          <p class="muted">Doses previstas para os próximos 15 dias</p>
+        </div>
+      </div>
+
+      ${
+        vacinasPendentes.length
+          ? `
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Pet</th>
+                    <th>Tutor</th>
+                    <th>E-mail</th>
+                    <th>Vacina</th>
+                    <th>Próxima dose</th>
+                  </tr>
+                </thead>
+                <tbody>${vacinaRows}</tbody>
+              </table>
+            </div>
+          `
+          : `
+            <div class="empty-state">
+              <h3>Nenhuma vacina pendente</h3>
+              <p>Não há reforços agendados para os próximos 15 dias.</p>
+            </div>
+          `
+      }
+    </section>
+  `;
+}
+
+function renderTutors(): string {
+  const rows = tutors.map((tutor) => `
+    <tr>
+      <td>
+        <strong>${escapeHtml(tutor.nome)}</strong>
+      </td>
+      <td>${escapeHtml(tutor.cpf)}</td>
+      <td>${escapeHtml(tutor.telefone || '—')}</td>
+      <td>${escapeHtml(tutor.email || '—')}</td>
+      <td>${escapeHtml(tutor.cidade ? `${tutor.cidade}/${tutor.uf}` : '—')}</td>
+      <td>
+        <div class="table-actions">
+          <button
+            class="button small secondary"
+            data-action="edit-tutor"
+            data-id="${tutor.id}"
+          >
+            Editar
+          </button>
+
+          <button
+            class="button small danger"
+            data-action="delete-tutor"
+            data-id="${tutor.id}"
+          >
+            Excluir
+          </button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+
+  return `
+    <section class="page-heading">
+      <div>
+        <p class="eyebrow">CADASTROS</p>
+        <h1>Tutores</h1>
+        <p class="muted">
+          Gerencie os responsáveis pelos animais atendidos.
+        </p>
+      </div>
+
+      <button class="button primary" data-action="new-tutor">
+        + Novo tutor
+      </button>
+    </section>
+
+    <section class="content-card">
+      <div class="section-heading">
+        <div>
+          <h2>Lista de tutores</h2>
+          <p class="muted">${tutors.length} registro(s)</p>
+        </div>
+      </div>
+
+      ${
+        tutors.length
+          ? `
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th>CPF</th>
+                    <th>Telefone</th>
+                    <th>E-mail</th>
+                    <th>Cidade/UF</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
+          `
+          : `
+            <div class="empty-state">
+              <h3>Nenhum tutor cadastrado</h3>
+              <p>Comece cadastrando o primeiro tutor.</p>
+              <button class="button primary" data-action="new-tutor">
+                Cadastrar tutor
+              </button>
+            </div>
+          `
+      }
+    </section>
+  `;
+}
+
+
   const content =
     activeView === 'tutors'
       ? renderTutors()
       : activeView === 'pets'
         ? renderPets()
-        : renderDashboard();
+        : activeView === 'stock'
+          ? renderStock()
+          : activeView === 'suppliers'
+            ? renderSuppliers()
+            : renderDashboard();
 
   root!.innerHTML = `
     <div class="app-layout">
@@ -525,6 +868,26 @@ function renderMain(): void {
           >
             <span>♡</span> Pets
           </button>
+
+          <button
+            class="nav-item ${activeView === 'stock' ? 'active' : ''}"
+            data-action="go-stock"
+          >
+            <span>+</span> Estoque ${criticalProducts.length > 0 ? `(${criticalProducts.length})` : ''}
+          </button>
+
+          ${
+            isAdmin
+              ? `
+                <button
+                  class="nav-item ${activeView === 'suppliers' ? 'active' : ''}"
+                  data-action="go-suppliers"
+                >
+                  <span>⇄</span> Fornecedores
+                </button>
+              `
+              : ''
+          }
         </nav>
 
         <div class="sidebar-footer">
@@ -577,38 +940,49 @@ function render(): void {
   }
 }
 
-async function loadClinicalData(): Promise<void> {
-  const [loadedTutors, loadedPets, loadedVacinas] = await Promise.all([
+async function loadAllData(): Promise<void> {
+  const [
+    loadedTutors,
+    loadedPets,
+    loadedVacinas,
+    loadedSuppliers,
+    loadedProducts,
+    loadedCritical
+  ] = await Promise.all([
     window.vetcare.clinical.listTutors(),
     window.vetcare.clinical.listPets(),
-    window.vetcare.notificacoes.buscarVacinasPendentes()
+    window.vetcare.notificacoes.buscarVacinasPendentes(),
+    window.vetcare.stock.listSuppliers(),
+    window.vetcare.stock.listProducts(),
+    window.vetcare.stock.listCriticalProducts()
   ]);
 
   tutors = loadedTutors;
   pets = loadedPets;
   vacinasPendentes = loadedVacinas;
+  suppliers = loadedSuppliers;
+  products = loadedProducts;
+  criticalProducts = loadedCritical;
 }
-
-function openTutorDialog(id?: number): void {
-  const tutor = id
-    ? tutors.find((item) => item.id === id)
+function openSupplierDialog(id?: number): void {
+  const supplier = id
+    ? suppliers.find((item) => item.id === id)
     : undefined;
 
-  if (id && !tutor) {
-    setNotice('Tutor não encontrado.');
+  if (id && !supplier) {
+    setNotice('Fornecedor não encontrado.');
     return;
   }
 
   const dialog = document.querySelector<HTMLDialogElement>('#form-dialog');
-
   if (!dialog) return;
 
   dialog.innerHTML = `
-    <form id="tutor-form" class="modal-form">
+    <form id="supplier-form" class="modal-form">
       <div class="modal-heading">
         <div>
-          <p class="eyebrow">CADASTRO</p>
-          <h2>${tutor ? 'Editar tutor' : 'Novo tutor'}</h2>
+          <p class="eyebrow">SUPRIMENTOS</p>
+          <h2>${supplier ? 'Editar fornecedor' : 'Novo fornecedor'}</h2>
         </div>
 
         <button
@@ -619,111 +993,70 @@ function openTutorDialog(id?: number): void {
         >×</button>
       </div>
 
-      <label for="tutor-nome">Nome completo *</label>
+      <label for="supplier-nome">Razão social / Nome *</label>
       <input
-        id="tutor-nome"
+        id="supplier-nome"
         name="nome"
         required
         maxlength="120"
-        value="${escapeHtml(tutor?.nome)}"
-      >
-
-      <label for="tutor-cpf">CPF *</label>
-      <input
-        id="tutor-cpf"
-        name="cpf"
-        required
-        maxlength="14"
-        placeholder="000.000.000-00"
-        value="${escapeHtml(tutor?.cpf)}"
+        value="${escapeHtml(supplier?.nome)}"
       >
 
       <div class="form-grid">
         <div>
-          <label for="tutor-telefone">Telefone</label>
-          <input
-            id="tutor-telefone"
-            name="telefone"
-            maxlength="20"
-            value="${escapeHtml(tutor?.telefone)}"
-          >
+          <label for="supplier-moeda">Moeda de compra *</label>
+          <select id="supplier-moeda" name="moeda" required>
+            <option value="BRL" ${supplier?.moeda === 'BRL' ? 'selected' : ''}>
+              BRL — Nacional (Real)
+            </option>
+            <option value="USD" ${supplier?.moeda === 'USD' ? 'selected' : ''}>
+              USD — Importado (Dólar)
+            </option>
+          </select>
         </div>
 
         <div>
-          <label for="tutor-email">E-mail</label>
+          <label for="supplier-pais">País *</label>
           <input
-            id="tutor-email"
+            id="supplier-pais"
+            name="pais"
+            required
+            maxlength="80"
+            value="${escapeHtml(supplier?.pais ?? 'Brasil')}"
+          >
+        </div>
+      </div>
+
+      <label for="supplier-documento">CNPJ ou Tax ID</label>
+      <input
+        id="supplier-documento"
+        name="documento"
+        maxlength="40"
+        value="${escapeHtml(supplier?.documento)}"
+      >
+
+      <div class="form-grid">
+        <div>
+          <label for="supplier-email">E-mail</label>
+          <input
+            id="supplier-email"
             name="email"
             type="email"
             maxlength="150"
-            value="${escapeHtml(tutor?.email)}"
+            value="${escapeHtml(supplier?.email)}"
+          >
+        </div>
+
+        <div>
+          <label for="supplier-telefone">Telefone</label>
+          <input
+            id="supplier-telefone"
+            name="telefone"
+            maxlength="30"
+            value="${escapeHtml(supplier?.telefone)}"
           >
         </div>
       </div>
-
-      <div class="form-grid">
-        <div>
-          <label for="tutor-cep">CEP</label>
-          <div style="display: flex; gap: 8px;">
-            <input
-              id="tutor-cep"
-              name="cep"
-              maxlength="9"
-              placeholder="00000-000"
-              value="${escapeHtml(tutor?.cep)}"
-            >
-            <button
-              type="button"
-              class="button secondary"
-              data-action="buscar-cep"
-            >
-              Buscar CEP
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <label for="tutor-uf">UF</label>
-          <input
-            id="tutor-uf"
-            name="uf"
-            maxlength="2"
-            value="${escapeHtml(tutor?.uf)}"
-          >
-        </div>
-      </div>
-
-      <label for="tutor-logradouro">Logradouro</label>
-      <input
-        id="tutor-logradouro"
-        name="logradouro"
-        maxlength="150"
-        value="${escapeHtml(tutor?.logradouro)}"
-      >
-
-      <div class="form-grid">
-        <div>
-          <label for="tutor-bairro">Bairro</label>
-          <input
-            id="tutor-bairro"
-            name="bairro"
-            maxlength="100"
-            value="${escapeHtml(tutor?.bairro)}"
-          >
-        </div>
-
-        <div>
-          <label for="tutor-cidade">Cidade</label>
-          <input
-            id="tutor-cidade"
-            name="cidade"
-            maxlength="100"
-            value="${escapeHtml(tutor?.cidade)}"
-          >
-        </div>
-      </div>
-
-      <p id="modal-cep-status" class="muted" style="margin: 4px 0 0;"></p>
 
       <div class="modal-actions">
         <button
@@ -735,84 +1068,49 @@ function openTutorDialog(id?: number): void {
         </button>
 
         <button type="submit" class="button primary">
-          ${tutor ? 'Salvar alterações' : 'Cadastrar tutor'}
+          ${supplier ? 'Salvar alterações' : 'Cadastrar fornecedor'}
         </button>
       </div>
     </form>
   `;
 
-  dialog.dataset.editId = tutor ? String(tutor.id) : '';
+  dialog.dataset.editId = supplier ? String(supplier.id) : '';
   dialog.showModal();
 }
-
-async function handleBuscarCep(button: HTMLButtonElement): Promise<void> {
-  const cepInput = document.querySelector<HTMLInputElement>('#tutor-cep');
-  const logradouroInput = document.querySelector<HTMLInputElement>('#tutor-logradouro');
-  const bairroInput = document.querySelector<HTMLInputElement>('#tutor-bairro');
-  const cidadeInput = document.querySelector<HTMLInputElement>('#tutor-cidade');
-  const ufInput = document.querySelector<HTMLInputElement>('#tutor-uf');
-  const statusEl = document.querySelector<HTMLParagraphElement>('#modal-cep-status');
-
-  if (!cepInput || !logradouroInput || !bairroInput || !cidadeInput || !ufInput) return;
-
-  button.disabled = true;
-  button.textContent = 'Buscando...';
-  if (statusEl) statusEl.textContent = '';
-
-  try {
-    const endereco = await window.vetcare.clinical.buscarCep(cepInput.value);
-    cepInput.value = endereco.cep;
-    logradouroInput.value = endereco.logradouro;
-    bairroInput.value = endereco.bairro;
-    cidadeInput.value = endereco.cidade;
-    ufInput.value = endereco.uf;
-    if (statusEl) {
-      statusEl.textContent = 'Endereço preenchido via ViaCEP.';
-    }
-  } catch (error) {
-    if (statusEl) {
-      statusEl.textContent = formatError(error, 'Não foi possível consultar o CEP.');
-    }
-  } finally {
-    button.disabled = false;
-    button.textContent = 'Buscar CEP';
-  }
-}
-
-function openPetDialog(id?: number): void {
-  const pet = id
-    ? pets.find((item) => item.id === id)
+function openProductDialog(id?: number): void {
+  const product = id
+    ? products.find((item) => item.id === id)
     : undefined;
 
-  if (id && !pet) {
-    setNotice('Pet não encontrado.');
+  if (id && !product) {
+    setNotice('Produto não encontrado.');
     return;
   }
 
-  if (tutors.length === 0) {
-    setNotice('Cadastre um tutor antes de cadastrar um pet.');
+  if (suppliers.length === 0) {
+    setNotice('Cadastre um fornecedor antes de adicionar itens ao estoque.');
     return;
   }
 
   const dialog = document.querySelector<HTMLDialogElement>('#form-dialog');
-
   if (!dialog) return;
 
-  const tutorOptions = tutors.map((tutor) => `
-    <option
-      value="${tutor.id}"
-      ${pet?.tutorId === tutor.id ? 'selected' : ''}
-    >
-      ${escapeHtml(tutor.nome)} — ${escapeHtml(tutor.cpf)}
-    </option>
-  `).join('');
+  const supplierOptions = suppliers
+    .map(
+      (s) => `
+      <option value="${s.id}" ${product?.fornecedorId === s.id ? 'selected' : ''}>
+        ${escapeHtml(s.nome)} (${escapeHtml(s.moeda)})
+      </option>
+    `
+    )
+    .join('');
 
   dialog.innerHTML = `
-    <form id="pet-form" class="modal-form">
+    <form id="product-form" class="modal-form">
       <div class="modal-heading">
         <div>
-          <p class="eyebrow">CADASTRO</p>
-          <h2>${pet ? 'Editar pet' : 'Novo pet'}</h2>
+          <p class="eyebrow">ESTOQUE</p>
+          <h2>${product ? 'Editar produto' : 'Novo produto no estoque'}</h2>
         </div>
 
         <button
@@ -823,73 +1121,111 @@ function openPetDialog(id?: number): void {
         >×</button>
       </div>
 
-      <label for="pet-tutor">Tutor responsável *</label>
-      <select id="pet-tutor" name="tutorId" required>
-        ${tutorOptions}
+      <label for="product-fornecedor">Fornecedor *</label>
+      <select id="product-fornecedor" name="fornecedorId" required>
+        ${supplierOptions}
       </select>
+      <small class="muted">
+        Se o fornecedor for USD, o custo informado será convertido automaticamente para BRL pela cotação atual.
+      </small>
 
-      <label for="pet-nome">Nome do animal *</label>
-      <input
-        id="pet-nome"
-        name="nome"
-        required
-        maxlength="100"
-        value="${escapeHtml(pet?.nome)}"
-      >
+      <div class="form-grid" style="margin-top: 8px;">
+        <div>
+          <label for="product-nome">Nome do produto / vacina *</label>
+          <input
+            id="product-nome"
+            name="nome"
+            required
+            maxlength="120"
+            placeholder="Ex.: Vacina V10"
+            value="${escapeHtml(product?.nome)}"
+          >
+        </div>
 
-      <label for="pet-especie">Espécie *</label>
-      <select id="pet-especie" name="especie" required>
-        <option value="CACHORRO" ${pet?.especie === 'CACHORRO' ? 'selected' : ''}>
-          Cachorro
-        </option>
-        <option value="GATO" ${pet?.especie === 'GATO' ? 'selected' : ''}>
-          Gato
-        </option>
-      </select>
-
-      <label for="pet-raca">Raça</label>
-      <input
-        id="pet-raca"
-        name="raca"
-        maxlength="100"
-        value="${escapeHtml(pet?.raca)}"
-      >
+        <div>
+          <label for="product-categoria">Categoria *</label>
+          <select id="product-categoria" name="categoria" required>
+            <option value="VACINA" ${product?.categoria === 'VACINA' ? 'selected' : ''}>
+              Vacina
+            </option>
+            <option value="MEDICAMENTO" ${product?.categoria === 'MEDICAMENTO' ? 'selected' : ''}>
+              Medicamento
+            </option>
+            <option value="INSUMO" ${product?.categoria === 'INSUMO' ? 'selected' : ''}>
+              Insumo clínico
+            </option>
+          </select>
+        </div>
+      </div>
 
       <div class="form-grid">
         <div>
-          <label for="pet-idade">Idade (anos)</label>
+          <label for="product-lote">Lote</label>
           <input
-            id="pet-idade"
-            name="idade"
+            id="product-lote"
+            name="lote"
+            maxlength="60"
+            value="${escapeHtml(product?.lote)}"
+          >
+        </div>
+
+        <div>
+          <label for="product-validade">Validade</label>
+          <input
+            id="product-validade"
+            name="validade"
+            type="date"
+            value="${escapeHtml(product?.validade)}"
+          >
+        </div>
+      </div>
+
+      <div class="form-grid">
+        <div>
+          <label for="product-quantidade">Quantidade atual *</label>
+          <input
+            id="product-quantidade"
+            name="quantidade"
             type="number"
             min="0"
             step="1"
-            value="${pet?.idade ?? 0}"
+            value="${product?.quantidade ?? 0}"
             required
           >
         </div>
 
         <div>
-          <label for="pet-peso">Peso (kg)</label>
+          <label for="product-minimo">Estoque mínimo *</label>
           <input
-            id="pet-peso"
-            name="peso"
+            id="product-minimo"
+            name="estoqueMinimo"
             type="number"
             min="0"
-            step="0.01"
-            value="${pet?.peso ?? 0}"
+            step="1"
+            value="${product?.estoqueMinimo ?? 5}"
             required
           >
         </div>
       </div>
 
-      <label for="pet-observacoes">Observações</label>
+      <label for="product-custo">Custo unitário (na moeda do fornecedor) *</label>
+      <input
+        id="product-custo"
+        name="custo"
+        type="number"
+        min="0"
+        step="0.01"
+        value="${product?.custo ?? 0}"
+        required
+      >
+
+      <label for="product-bula">Resumo da bula / observações</label>
       <textarea
-        id="pet-observacoes"
-        name="observacoes"
+        id="product-bula"
+        name="bula"
         rows="3"
-        maxlength="1000"
-      >${escapeHtml(pet?.observacoes)}</textarea>
+        maxlength="2000"
+      >${escapeHtml(product?.bula)}</textarea>
 
       <div class="modal-actions">
         <button
@@ -901,13 +1237,13 @@ function openPetDialog(id?: number): void {
         </button>
 
         <button type="submit" class="button primary">
-          ${pet ? 'Salvar alterações' : 'Cadastrar pet'}
+          ${product ? 'Salvar alterações' : 'Salvar no estoque'}
         </button>
       </div>
     </form>
   `;
 
-  dialog.dataset.editId = pet ? String(pet.id) : '';
+  dialog.dataset.editId = product ? String(product.id) : '';
   dialog.showModal();
 }
 
@@ -931,7 +1267,7 @@ async function handleAuthSubmit(form: HTMLFormElement): Promise<void> {
     currentUser = user;
   }
 
-  await loadClinicalData();
+  await loadAllData();
   activeView = 'dashboard';
   notice = '';
   render();
@@ -964,7 +1300,7 @@ async function handleTutorSubmit(form: HTMLFormElement): Promise<void> {
   }
 
   dialog?.close();
-  await loadClinicalData();
+  await loadAllData();
   render();
 }
 
@@ -1003,7 +1339,75 @@ async function handlePetSubmit(form: HTMLFormElement): Promise<void> {
   }
 
   dialog?.close();
-  await loadClinicalData();
+  await loadAllData();
+  render();
+}
+
+async function handleSupplierSubmit(form: HTMLFormElement): Promise<void> {
+  const formData = new FormData(form);
+
+  const data: FornecedorData = {
+    nome: getField(formData, 'nome'),
+    documento: getField(formData, 'documento'),
+    email: getField(formData, 'email'),
+    telefone: getField(formData, 'telefone'),
+    pais: getField(formData, 'pais'),
+    moeda: getField(formData, 'moeda') as Fornecedor['moeda']
+  };
+
+  const dialog = document.querySelector<HTMLDialogElement>('#form-dialog');
+  const editId = Number(dialog?.dataset.editId);
+
+  if (editId > 0) {
+    await window.vetcare.stock.updateSupplier(editId, data);
+    notice = 'Fornecedor atualizado com sucesso.';
+  } else {
+    await window.vetcare.stock.createSupplier(data);
+    notice = 'Fornecedor cadastrado com sucesso.';
+  }
+
+  dialog?.close();
+  await loadAllData();
+  render();
+}
+
+async function handleProductSubmit(form: HTMLFormElement): Promise<void> {
+  const formData = new FormData(form);
+
+  const fornecedorId = Number(formData.get('fornecedorId'));
+  const supplier = suppliers.find((s) => s.id === fornecedorId);
+
+  const data: ProdutoEstoqueData = {
+    fornecedorId,
+    nome: getField(formData, 'nome'),
+    categoria: getField(formData, 'categoria'),
+    lote: getField(formData, 'lote'),
+    validade: getField(formData, 'validade'),
+    quantidade: Number(formData.get('quantidade')),
+    estoqueMinimo: Number(formData.get('estoqueMinimo')),
+    bula: getField(formData, 'bula'),
+    custo: Number(formData.get('custo'))
+  };
+
+  const dialog = document.querySelector<HTMLDialogElement>('#form-dialog');
+  const editId = Number(dialog?.dataset.editId);
+
+  if (editId > 0) {
+    await window.vetcare.stock.updateProduct(editId, data);
+    notice =
+      supplier?.moeda === 'USD'
+        ? 'Produto atualizado e custo convertido automaticamente de USD para BRL.'
+        : 'Produto atualizado com sucesso.';
+  } else {
+    await window.vetcare.stock.createProduct(data);
+    notice =
+      supplier?.moeda === 'USD'
+        ? 'Produto importado cadastrado com conversão automática USD → BRL!'
+        : 'Produto cadastrado no estoque com sucesso.';
+  }
+
+  dialog?.close();
+  await loadAllData();
   render();
 }
 
@@ -1027,44 +1431,6 @@ async function handleClick(event: MouseEvent): Promise<void> {
         render();
         break;
 
-      case 'go-dashboard':
-        activeView = 'dashboard';
-        notice = '';
-        render();
-        break;
-
-      case 'go-tutors':
-        activeView = 'tutors';
-        notice = '';
-        render();
-        break;
-
-      case 'go-pets':
-        activeView = 'pets';
-        notice = '';
-        render();
-        break;
-
-      case 'new-tutor':
-        openTutorDialog();
-        break;
-
-      case 'edit-tutor':
-        openTutorDialog(id);
-        break;
-
-      case 'buscar-cep':
-        await handleBuscarCep(button);
-        break;
-
-      case 'new-pet':
-        openPetDialog();
-        break;
-
-      case 'edit-pet':
-        openPetDialog(id);
-        break;
-
       case 'close-modal':
         document.querySelector<HTMLDialogElement>('#form-dialog')?.close();
         break;
@@ -1072,7 +1438,7 @@ async function handleClick(event: MouseEvent): Promise<void> {
       case 'delete-tutor':
         if (confirm('Deseja realmente excluir este tutor?')) {
           await window.vetcare.clinical.deleteTutor(id);
-          await loadClinicalData();
+          await loadAllData();
           setNotice('Tutor excluído com sucesso.');
         }
         break;
@@ -1080,8 +1446,24 @@ async function handleClick(event: MouseEvent): Promise<void> {
       case 'delete-pet':
         if (confirm('Deseja realmente excluir este pet?')) {
           await window.vetcare.clinical.deletePet(id);
-          await loadClinicalData();
+          await loadAllData();
           setNotice('Pet excluído com sucesso.');
+        }
+        break;
+
+      case 'delete-supplier':
+        if (confirm('Deseja realmente excluir este fornecedor?')) {
+          await window.vetcare.stock.deleteSupplier(id);
+          await loadAllData();
+          setNotice('Fornecedor excluído com sucesso.');
+        }
+        break;
+
+      case 'delete-product':
+        if (confirm('Deseja realmente excluir este item do estoque?')) {
+          await window.vetcare.stock.deleteProduct(id);
+          await loadAllData();
+          setNotice('Item removido do estoque com sucesso.');
         }
         break;
 
@@ -1098,7 +1480,11 @@ async function handleClick(event: MouseEvent): Promise<void> {
         currentUser = null;
         tutors = [];
         pets = [];
+        suppliers = [];
+        products = [];
+        criticalProducts = [];
         vacinasPendentes = [];
+        usdRateInfo = null;
         authMode = 'login';
         notice = '';
         render();
@@ -1132,6 +1518,14 @@ async function handleSubmit(event: SubmitEvent): Promise<void> {
       case 'pet-form':
         await handlePetSubmit(target);
         break;
+
+      case 'supplier-form':
+        await handleSupplierSubmit(target);
+        break;
+
+      case 'product-form':
+        await handleProductSubmit(target);
+        break;
     }
   } catch (error) {
     setNotice(
@@ -1153,7 +1547,7 @@ async function initialize(): Promise<void> {
     currentUser = await window.vetcare.auth.getCurrentUser();
 
     if (currentUser) {
-      await loadClinicalData();
+      await loadAllData();
     }
   } catch {
     currentUser = null;

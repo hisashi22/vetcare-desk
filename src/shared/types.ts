@@ -1,4 +1,3 @@
-
 /**
  * VetCare Desktop
  * Tipos compartilhados do sistema.
@@ -61,6 +60,10 @@ export interface Pet {
 export interface Fornecedor {
   id: number;
   nome: string;
+  documento: string;
+  email: string;
+  telefone: string;
+  pais: string;
   moeda: Currency;
 }
 
@@ -69,6 +72,7 @@ export interface ProdutoEstoque {
   id: number;
   fornecedorId: number;
   nome: string;
+  categoria: string;
   lote: string;
   validade: string;
   quantidade: number;

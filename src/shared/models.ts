@@ -1,4 +1,3 @@
-
 import {
   Usuario,
   Veterinario,
@@ -62,6 +61,10 @@ export class FornecedorModel implements Fornecedor {
   constructor(
     public id: number,
     public nome: string,
+    public documento: string,
+    public email: string,
+    public telefone: string,
+    public pais: string,
     public moeda: Fornecedor['moeda']
   ) {}
 }
@@ -71,6 +74,7 @@ export class ProdutoEstoqueModel implements ProdutoEstoque {
     public id: number,
     public fornecedorId: number,
     public nome: string,
+    public categoria: string,
     public lote: string,
     public validade: string,
     public quantidade: number,

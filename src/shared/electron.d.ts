@@ -6,7 +6,9 @@ import type {
 import type {
   UserRole,
   Tutor,
-  Pet
+  Pet,
+  Fornecedor,
+  ProdutoEstoque
 } from './types';
 
 import type {
@@ -34,6 +36,8 @@ interface RegisterAdminData {
 
 type TutorData = Omit<Tutor, 'id'>;
 type PetData = Omit<Pet, 'id'>;
+type FornecedorData = Omit<Fornecedor, 'id'>;
+type ProdutoEstoqueData = Omit<ProdutoEstoque, 'id'>;
 
 interface EnderecoViaCep {
   cep: string;
@@ -41,6 +45,13 @@ interface EnderecoViaCep {
   bairro: string;
   cidade: string;
   uf: string;
+}
+
+interface CotacaoDolar {
+  moedaOrigem: 'USD';
+  moedaDestino: 'BRL';
+  valorCompra: number;
+  atualizadoEm: string;
 }
 
 interface VetCareAPI {
@@ -68,6 +79,22 @@ interface VetCareAPI {
     createPet(data: PetData): Promise<number>;
     updatePet(id: number, data: PetData): Promise<boolean>;
     deletePet(id: number): Promise<boolean>;
+  };
+
+  stock: {
+    listSuppliers(): Promise<Fornecedor[]>;
+    getSupplier(id: number): Promise<Fornecedor | null>;
+    createSupplier(data: FornecedorData): Promise<number>;
+    updateSupplier(id: number, data: FornecedorData): Promise<boolean>;
+    deleteSupplier(id: number): Promise<boolean>;
+
+    listProducts(): Promise<ProdutoEstoque[]>;
+    getProduct(id: number): Promise<ProdutoEstoque | null>;
+    listCriticalProducts(): Promise<ProdutoEstoque[]>;
+    createProduct(data: ProdutoEstoqueData): Promise<number>;
+    updateProduct(id: number, data: ProdutoEstoqueData): Promise<boolean>;
+    deleteProduct(id: number): Promise<boolean>;
+    getUsdRate(): Promise<CotacaoDolar>;
   };
 
   notificacoes: {

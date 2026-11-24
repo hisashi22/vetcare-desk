@@ -2,9 +2,15 @@ import { SecurityValidator } from '../security/SecurityValidator';
 import { NotificacaoVacinaService } from '../services/NotificacaoVacinaService';
 import { AuthService, Permission } from '../security/AuthService';
 import { ClinicaService } from '../services/ClinicaService';
-import { CepService } from '../services/ApiServices';
+import { CepService, CambioService } from '../services/ApiServices';
 
-import type { UserRole, Tutor, Pet } from '../../shared/types';
+import type {
+  UserRole,
+  Tutor,
+  Pet,
+  Fornecedor,
+  ProdutoEstoque
+} from '../../shared/types';
 
 import type {
   IpcMain,
@@ -14,12 +20,15 @@ import type {
 
 type TutorData = Omit<Tutor, 'id'>;
 type PetData = Omit<Pet, 'id'>;
+type FornecedorData = Omit<Fornecedor, 'id'>;
+type ProdutoEstoqueData = Omit<ProdutoEstoque, 'id'>;
 
 export class IpcController {
   private readonly authService: AuthService;
   private readonly clinicaService: ClinicaService;
   private readonly notificacaoVacinaService: NotificacaoVacinaService;
   private readonly cepService: CepService;
+  private readonly cambioService: CambioService;
   private readonly getMainWindow: () => BrowserWindow | null;
   private readonly ipcMain: IpcMain;
   private registered = false;
@@ -47,6 +56,20 @@ export class IpcController {
     'clinical:update-pet',
     'clinical:delete-pet',
 
+    'stock:list-suppliers',
+    'stock:get-supplier',
+    'stock:create-supplier',
+    'stock:update-supplier',
+    'stock:delete-supplier',
+
+    'stock:list-products',
+    'stock:get-product',
+    'stock:list-critical-products',
+    'stock:create-product',
+    'stock:update-product',
+    'stock:delete-product',
+    'stock:get-usd-rate',
+
     'notificacoes:buscar-vacinas-pendentes',
     'notificacoes:enviar'
   ];
@@ -57,7 +80,8 @@ export class IpcController {
     ipcMain: IpcMain,
     clinicaService: ClinicaService = new ClinicaService(),
     notificacaoVacinaService: NotificacaoVacinaService = new NotificacaoVacinaService(),
-    cepService: CepService = new CepService()
+    cepService: CepService = new CepService(),
+    cambioService: CambioService = new CambioService()
   ) {
     this.authService = authService;
     this.getMainWindow = getMainWindow;
@@ -65,6 +89,7 @@ export class IpcController {
     this.clinicaService = clinicaService;
     this.notificacaoVacinaService = notificacaoVacinaService;
     this.cepService = cepService;
+    this.cambioService = cambioService;
   }
 
   private validateSender(event: IpcMainInvokeEvent): void {
@@ -80,15 +105,25 @@ export class IpcController {
     }
   }
 
-  private validateClinicalAccess(): void {
+  private validateAuthenticated(): void {
     const usuario = this.authService.getCurrentUser();
-
-    if (
-      !usuario ||
-      !this.authService.hasPermission('MANAGE_CLINICAL')
-    ) {
-      throw new Error('Acesso não autorizado ao módulo clínico.');
+    if (!usuario) {
+      throw new Error('Usuário não autenticado.');
     }
+  }
+
+  private validatePermission(permission: Permission, message: string): void {
+    const usuario = this.authService.getCurrentUser();
+    if (!usuario || !this.authService.hasPermission(permission)) {
+      throw new Error(message);
+    }
+  }
+
+  private validateClinicalAccess(): void {
+    this.validatePermission(
+      'MANAGE_CLINICAL',
+      'Acesso não autorizado ao módulo clínico.'
+    );
   }
 
   private validateLoginData(data: unknown): void {
@@ -209,6 +244,68 @@ export class IpcController {
     };
   }
 
+  private validateFornecedorData(data: unknown): FornecedorData {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new Error('Dados do fornecedor inválidos.');
+    }
+
+    const payload = data as Record<string, unknown>;
+
+    if (
+      typeof payload.nome !== 'string' ||
+      typeof payload.documento !== 'string' ||
+      typeof payload.email !== 'string' ||
+      typeof payload.telefone !== 'string' ||
+      typeof payload.pais !== 'string' ||
+      (payload.moeda !== 'BRL' && payload.moeda !== 'USD')
+    ) {
+      throw new Error('Dados do fornecedor inválidos.');
+    }
+
+    return {
+      nome: payload.nome,
+      documento: payload.documento,
+      email: payload.email,
+      telefone: payload.telefone,
+      pais: payload.pais,
+      moeda: payload.moeda
+    };
+  }
+
+  private validateProdutoEstoqueData(data: unknown): ProdutoEstoqueData {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new Error('Dados do produto inválidos.');
+    }
+
+    const payload = data as Record<string, unknown>;
+
+    if (
+      typeof payload.fornecedorId !== 'number' ||
+      typeof payload.nome !== 'string' ||
+      typeof payload.categoria !== 'string' ||
+      typeof payload.lote !== 'string' ||
+      typeof payload.validade !== 'string' ||
+      typeof payload.quantidade !== 'number' ||
+      typeof payload.estoqueMinimo !== 'number' ||
+      typeof payload.bula !== 'string' ||
+      typeof payload.custo !== 'number'
+    ) {
+      throw new Error('Dados do produto inválidos.');
+    }
+
+    return {
+      fornecedorId: payload.fornecedorId,
+      nome: payload.nome,
+      categoria: payload.categoria,
+      lote: payload.lote,
+      validade: payload.validade,
+      quantidade: payload.quantidade,
+      estoqueMinimo: payload.estoqueMinimo,
+      bula: payload.bula,
+      custo: payload.custo
+    };
+  }
+
   private authorizeClinical(event: IpcMainInvokeEvent): void {
     this.validateSender(event);
     this.validateClinicalAccess();
@@ -261,234 +358,325 @@ export class IpcController {
     this.ipcMain.handle(
       'auth:logout',
       (event: IpcMainInvokeEvent) => {
-        this.validateSender(event);
-        this.authService.logout();
-        return true;
-      }
-    );
-
-    this.ipcMain.handle(
-      'auth:get-current-user',
-      (event: IpcMainInvokeEvent) => {
-        this.validateSender(event);
-        return this.authService.getCurrentUser();
-      }
-    );
-
-    this.ipcMain.handle(
-      'auth:has-permission',
-      (event: IpcMainInvokeEvent, permission: unknown) => {
-        this.validateSender(event);
-
-        const validPermissions: Permission[] = [
-          'MANAGE_USERS',
-          'MANAGE_SUPPLIERS',
-          'MANAGE_STOCK',
-          'MANAGE_FINANCES',
-          'MANAGE_CLINICAL',
-          'DELETE_CRITICAL'
-        ];
-
-        if (
-          typeof permission !== 'string' ||
-          !validPermissions.includes(permission as Permission)
-        ) {
-          throw new Error('Permissão inválida.');
-        }
-
-        return this.authService.hasPermission(permission as Permission);
-      }
-    );
-
-    this.ipcMain.handle(
-      'auth:create-user',
-      (event: IpcMainInvokeEvent, data: unknown) => {
-        this.validateSender(event);
-        this.validateRegisterData(data);
-
-        if (!data || typeof data !== 'object' || Array.isArray(data)) {
-          throw new Error('Dados de cadastro inválidos.');
-        }
-
-        const payload = data as {
-          nome: string;
-          email: string;
-          password: string;
-          role: unknown;
-        };
-
-        if (
-          payload.role !== 'ADMIN' &&
-          payload.role !== 'VETERINARIO'
-        ) {
-          throw new Error('Perfil de usuário inválido.');
-        }
-
-        return this.authService.createUser(
-          payload.nome,
-          payload.email,
-          payload.password,
-          payload.role as UserRole
-        );
-      }
-    );
-
-    // TUTORES & VIACEP
-    this.ipcMain.handle(
-      'clinical:list-tutors',
-      (event: IpcMainInvokeEvent) => {
-        this.authorizeClinical(event);
-        return this.clinicaService.listarTutores();
-      }
-    );
-
-    this.ipcMain.handle(
-      'clinical:get-tutor',
-      (event: IpcMainInvokeEvent, id: unknown) => {
-        this.authorizeClinical(event);
-        return this.clinicaService.buscarTutor(this.validateId(id));
-      }
-    );
-
-    this.ipcMain.handle(
-      'clinical:get-tutor-by-cpf',
-      (event: IpcMainInvokeEvent, cpf: unknown) => {
-        this.authorizeClinical(event);
-
-        if (typeof cpf !== 'string') {
-          throw new Error('CPF inválido.');
-        }
-
-        return this.clinicaService.buscarTutorPorCpf(cpf);
-      }
-    );
-
-    this.ipcMain.handle(
-      'clinical:create-tutor',
-      (event: IpcMainInvokeEvent, data: unknown) => {
-        this.authorizeClinical(event);
-        return this.clinicaService.cadastrarTutor(
-          this.validateTutorData(data)
-        );
-      }
-    );
-
-    this.ipcMain.handle(
-      'clinical:update-tutor',
-      (event: IpcMainInvokeEvent, id: unknown, data: unknown) => {
-        this.authorizeClinical(event);
-
-        return this.clinicaService.atualizarTutor(
-          this.validateId(id),
-          this.validateTutorData(data)
-        );
-      }
-    );
-
-    this.ipcMain.handle(
-      'clinical:delete-tutor',
-      (event: IpcMainInvokeEvent, id: unknown) => {
-        this.authorizeClinical(event);
-        return this.clinicaService.excluirTutor(this.validateId(id));
-      }
-    );
-
-    this.ipcMain.handle(
-      'clinical:buscar-cep',
-      async (event: IpcMainInvokeEvent, cep: unknown) => {
-        this.authorizeClinical(event);
-
-        if (typeof cep !== 'string') {
-          throw new Error('CEP inválido.');
-        }
-
-        return this.cepService.buscarEnderecoPorCep(cep);
-      }
-    );
-
-    // PETS
-    this.ipcMain.handle(
-      'clinical:list-pets',
-      (event: IpcMainInvokeEvent) => {
-        this.authorizeClinical(event);
-        return this.clinicaService.listarPets();
-      }
-    );
-
-    this.ipcMain.handle(
-      'clinical:get-pet',
-      (event: IpcMainInvokeEvent, id: unknown) => {
-        this.authorizeClinical(event);
-        return this.clinicaService.buscarPet(this.validateId(id));
-      }
-    );
-
-    this.ipcMain.handle(
-      'clinical:list-pets-by-tutor',
-      (event: IpcMainInvokeEvent, tutorId: unknown) => {
-        this.authorizeClinical(event);
-
-        return this.clinicaService.listarPetsDoTutor(
-          this.validateId(tutorId)
-        );
-      }
-    );
-
-    this.ipcMain.handle(
-      'clinical:create-pet',
-      (event: IpcMainInvokeEvent, data: unknown) => {
-        this.authorizeClinical(event);
-        return this.clinicaService.cadastrarPet(
-          this.validatePetData(data)
-        );
-      }
-    );
-
-    this.ipcMain.handle(
-      'clinical:update-pet',
-      (event: IpcMainInvokeEvent, id: unknown, data: unknown) => {
-        this.authorizeClinical(event);
-
-        return this.clinicaService.atualizarPet(
-          this.validateId(id),
-          this.validatePetData(data)
-        );
-      }
-    );
-
-    this.ipcMain.handle(
-      'clinical:delete-pet',
-      (event: IpcMainInvokeEvent, id: unknown) => {
-        this.authorizeClinical(event);
-        return this.clinicaService.excluirPet(this.validateId(id));
-      }
-    );
-
-    // NOTIFICAÇÕES BREVO
-    this.ipcMain.handle(
-      'notificacoes:buscar-vacinas-pendentes',
-      (event: IpcMainInvokeEvent) => {
-        this.authorizeClinical(event);
-        return this.notificacaoVacinaService.buscarVacinasPendentes();
-      }
-    );
-
-    this.ipcMain.handle(
-      'notificacoes:enviar',
-      async (event: IpcMainInvokeEvent) => {
-        this.authorizeClinical(event);
-        return this.notificacaoVacinaService.enviarNotificacoes();
-      }
-    );
-
-    this.registered = true;
-  }
-
-  public removeHandlers(): void {
-    for (const channel of this.channels) {
-      this.ipcMain.removeHandler(channel);
-    }
-
-    this.registered = false;
-  }
+this.validateSender(event);
+this.authService.logout();
+return true;
+}
+);
+this.ipcMain.handle(
+'auth:get-current-user',
+(event: IpcMainInvokeEvent) => {
+this.validateSender(event);
+return this.authService.getCurrentUser();
+}
+);
+this.ipcMain.handle(
+'auth:has-permission',
+(event: IpcMainInvokeEvent, permission: unknown) => {
+this.validateSender(event);
+const validPermissions: Permission[] = [
+'MANAGE_USERS',
+'MANAGE_SUPPLIERS',
+'MANAGE_STOCK',
+'MANAGE_FINANCES',
+'MANAGE_CLINICAL',
+'DELETE_CRITICAL'
+];
+if (
+typeof permission !== 'string' ||
+!validPermissions.includes(permission as Permission)
+) {
+throw new Error('Permissão inválida.');
+}
+return this.authService.hasPermission(permission as Permission);
+}
+);
+this.ipcMain.handle(
+'auth:create-user',
+(event: IpcMainInvokeEvent, data: unknown) => {
+this.validateSender(event);
+this.validateRegisterData(data);
+if (!data || typeof data !== 'object' || Array.isArray(data)) {
+throw new Error('Dados de cadastro inválidos.');
+}
+const payload = data as {
+nome: string;
+email: string;
+password: string;
+role: unknown;
+};
+if (
+payload.role !== 'ADMIN' &&
+payload.role !== 'VETERINARIO'
+) {
+throw new Error('Perfil de usuário inválido.');
+}
+return this.authService.createUser(
+payload.nome,
+payload.email,
+payload.password,
+payload.role as UserRole
+);
+}
+);
+// TUTORES & VIACEP
+this.ipcMain.handle(
+'clinical:list-tutors',
+(event: IpcMainInvokeEvent) => {
+this.authorizeClinical(event);
+return this.clinicaService.listarTutores();
+}
+);
+this.ipcMain.handle(
+'clinical:get-tutor',
+(event: IpcMainInvokeEvent, id: unknown) => {
+this.authorizeClinical(event);
+return this.clinicaService.buscarTutor(this.validateId(id));
+}
+);
+this.ipcMain.handle(
+'clinical:get-tutor-by-cpf',
+(event: IpcMainInvokeEvent, cpf: unknown) => {
+this.authorizeClinical(event);
+if (typeof cpf !== 'string') {
+throw new Error('CPF inválido.');
+}
+return this.clinicaService.buscarTutorPorCpf(cpf);
+}
+);
+this.ipcMain.handle(
+'clinical:create-tutor',
+(event: IpcMainInvokeEvent, data: unknown) => {
+this.authorizeClinical(event);
+return this.clinicaService.cadastrarTutor(
+this.validateTutorData(data)
+);
+}
+);
+this.ipcMain.handle(
+'clinical:update-tutor',
+(event: IpcMainInvokeEvent, id: unknown, data: unknown) => {
+this.authorizeClinical(event);
+return this.clinicaService.atualizarTutor(
+this.validateId(id),
+this.validateTutorData(data)
+);
+}
+);
+this.ipcMain.handle(
+'clinical:delete-tutor',
+(event: IpcMainInvokeEvent, id: unknown) => {
+this.authorizeClinical(event);
+return this.clinicaService.excluirTutor(this.validateId(id));
+}
+);
+this.ipcMain.handle(
+'clinical:buscar-cep',
+async (event: IpcMainInvokeEvent, cep: unknown) => {
+this.authorizeClinical(event);
+if (typeof cep !== 'string') {
+throw new Error('CEP inválido.');
+}
+return this.cepService.buscarEnderecoPorCep(cep);
+}
+);
+// PETS
+this.ipcMain.handle(
+'clinical:list-pets',
+(event: IpcMainInvokeEvent) => {
+this.authorizeClinical(event);
+return this.clinicaService.listarPets();
+}
+);
+this.ipcMain.handle(
+'clinical:get-pet',
+(event: IpcMainInvokeEvent, id: unknown) => {
+this.authorizeClinical(event);
+return this.clinicaService.buscarPet(this.validateId(id));
+}
+);
+this.ipcMain.handle(
+'clinical:list-pets-by-tutor',
+(event: IpcMainInvokeEvent, tutorId: unknown) => {
+this.authorizeClinical(event);
+return this.clinicaService.listarPetsDoTutor(
+this.validateId(tutorId)
+);
+}
+);
+this.ipcMain.handle(
+'clinical:create-pet',
+(event: IpcMainInvokeEvent, data: unknown) => {
+this.authorizeClinical(event);
+return this.clinicaService.cadastrarPet(
+this.validatePetData(data)
+);
+}
+);
+this.ipcMain.handle(
+'clinical:update-pet',
+(event: IpcMainInvokeEvent, id: unknown, data: unknown) => {
+this.authorizeClinical(event);
+return this.clinicaService.atualizarPet(
+this.validateId(id),
+this.validatePetData(data)
+);
+}
+);
+this.ipcMain.handle(
+'clinical:delete-pet',
+(event: IpcMainInvokeEvent, id: unknown) => {
+this.authorizeClinical(event);
+return this.clinicaService.excluirPet(this.validateId(id));
+}
+);
+// FORNECEDORES
+this.ipcMain.handle(
+'stock:list-suppliers',
+(event: IpcMainInvokeEvent) => {
+this.validateSender(event);
+this.validateAuthenticated();
+return this.clinicaService.listarFornecedores();
+}
+);
+this.ipcMain.handle(
+'stock:get-supplier',
+(event: IpcMainInvokeEvent, id: unknown) => {
+this.validateSender(event);
+this.validateAuthenticated();
+return this.clinicaService.buscarFornecedor(this.validateId(id));
+}
+);
+this.ipcMain.handle(
+'stock:create-supplier',
+(event: IpcMainInvokeEvent, data: unknown) => {
+this.validateSender(event);
+this.validatePermission(
+'MANAGE_SUPPLIERS',
+'Apenas administradores podem cadastrar fornecedores.'
+);
+return this.clinicaService.cadastrarFornecedor(
+this.validateFornecedorData(data)
+);
+}
+);
+this.ipcMain.handle(
+'stock:update-supplier',
+(event: IpcMainInvokeEvent, id: unknown, data: unknown) => {
+this.validateSender(event);
+this.validatePermission(
+'MANAGE_SUPPLIERS',
+'Apenas administradores podem editar fornecedores.'
+);
+return this.clinicaService.atualizarFornecedor(
+this.validateId(id),
+this.validateFornecedorData(data)
+);
+}
+);
+this.ipcMain.handle(
+'stock:delete-supplier',
+(event: IpcMainInvokeEvent, id: unknown) => {
+this.validateSender(event);
+this.validatePermission(
+'DELETE_CRITICAL',
+'Apenas administradores podem excluir fornecedores.'
+);
+return this.clinicaService.excluirFornecedor(this.validateId(id));
+}
+);
+// ESTOQUE & CÂMBIO USD/BRL
+this.ipcMain.handle(
+'stock:list-products',
+(event: IpcMainInvokeEvent) => {
+this.validateSender(event);
+this.validateAuthenticated();
+return this.clinicaService.listarProdutosEstoque();
+}
+);
+this.ipcMain.handle(
+'stock:get-product',
+(event: IpcMainInvokeEvent, id: unknown) => {
+this.validateSender(event);
+this.validateAuthenticated();
+return this.clinicaService.buscarProdutoEstoque(this.validateId(id));
+}
+);
+this.ipcMain.handle(
+'stock:list-critical-products',
+(event: IpcMainInvokeEvent) => {
+this.validateSender(event);
+this.validateAuthenticated();
+return this.clinicaService.listarProdutosEstoqueCritico();
+}
+);
+this.ipcMain.handle(
+'stock:create-product',
+async (event: IpcMainInvokeEvent, data: unknown) => {
+this.validateSender(event);
+this.validatePermission(
+'MANAGE_STOCK',
+'Acesso não autorizado para gerenciar estoque.'
+);
+return this.clinicaService.cadastrarProdutoEstoque(
+this.validateProdutoEstoqueData(data)
+);
+}
+);
+this.ipcMain.handle(
+'stock:update-product',
+async (event: IpcMainInvokeEvent, id: unknown, data: unknown) => {
+this.validateSender(event);
+this.validatePermission(
+'MANAGE_STOCK',
+'Acesso não autorizado para gerenciar estoque.'
+);
+return this.clinicaService.atualizarProdutoEstoque(
+this.validateId(id),
+this.validateProdutoEstoqueData(data)
+);
+}
+);
+this.ipcMain.handle(
+'stock:delete-product',
+(event: IpcMainInvokeEvent, id: unknown) => {
+this.validateSender(event);
+this.validatePermission(
+'DELETE_CRITICAL',
+'Apenas administradores podem excluir itens do estoque.'
+);
+return this.clinicaService.excluirProdutoEstoque(this.validateId(id));
+}
+);
+this.ipcMain.handle(
+'stock:get-usd-rate',
+async (event: IpcMainInvokeEvent) => {
+this.validateSender(event);
+this.validateAuthenticated();
+return this.cambioService.obterCotacaoDolar();
+}
+);
+// NOTIFICAÇÕES BREVO
+this.ipcMain.handle(
+'notificacoes:buscar-vacinas-pendentes',
+(event: IpcMainInvokeEvent) => {
+this.authorizeClinical(event);
+return this.notificacaoVacinaService.buscarVacinasPendentes();
+}
+);
+this.ipcMain.handle(
+'notificacoes:enviar',
+async (event: IpcMainInvokeEvent) => {
+this.authorizeClinical(event);
+return this.notificacaoVacinaService.enviarNotificacoes();
+}
+);
+this.registered = true;
+}
+public removeHandlers(): void {
+for (const channel of this.channels) {
+this.ipcMain.removeHandler(channel);
+}
+this.registered = false;
+}
 }

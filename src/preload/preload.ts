@@ -8,7 +8,9 @@ import type {
 import type {
   UserRole,
   Tutor,
-  Pet
+  Pet,
+  Fornecedor,
+  ProdutoEstoque
 } from '../shared/types';
 
 import type {
@@ -36,6 +38,8 @@ type RegisterAdminData = {
 
 type TutorData = Omit<Tutor, 'id'>;
 type PetData = Omit<Pet, 'id'>;
+type FornecedorData = Omit<Fornecedor, 'id'>;
+type ProdutoEstoqueData = Omit<ProdutoEstoque, 'id'>;
 
 const vetcareAPI = {
   auth: {
@@ -99,6 +103,44 @@ const vetcareAPI = {
 
     deletePet: (id: number): Promise<boolean> =>
       ipcRenderer.invoke('clinical:delete-pet', id)
+  },
+
+  stock: {
+    listSuppliers: (): Promise<Fornecedor[]> =>
+      ipcRenderer.invoke('stock:list-suppliers'),
+
+    getSupplier: (id: number): Promise<Fornecedor | null> =>
+      ipcRenderer.invoke('stock:get-supplier', id),
+
+    createSupplier: (data: FornecedorData): Promise<number> =>
+      ipcRenderer.invoke('stock:create-supplier', data),
+
+    updateSupplier: (id: number, data: FornecedorData): Promise<boolean> =>
+      ipcRenderer.invoke('stock:update-supplier', id, data),
+
+    deleteSupplier: (id: number): Promise<boolean> =>
+      ipcRenderer.invoke('stock:delete-supplier', id),
+
+    listProducts: (): Promise<ProdutoEstoque[]> =>
+      ipcRenderer.invoke('stock:list-products'),
+
+    getProduct: (id: number): Promise<ProdutoEstoque | null> =>
+      ipcRenderer.invoke('stock:get-product', id),
+
+    listCriticalProducts: (): Promise<ProdutoEstoque[]> =>
+      ipcRenderer.invoke('stock:list-critical-products'),
+
+    createProduct: (data: ProdutoEstoqueData): Promise<number> =>
+      ipcRenderer.invoke('stock:create-product', data),
+
+    updateProduct: (id: number, data: ProdutoEstoqueData): Promise<boolean> =>
+      ipcRenderer.invoke('stock:update-product', id, data),
+
+    deleteProduct: (id: number): Promise<boolean> =>
+      ipcRenderer.invoke('stock:delete-product', id),
+
+    getUsdRate: () =>
+      ipcRenderer.invoke('stock:get-usd-rate')
   },
 
   notificacoes: {
